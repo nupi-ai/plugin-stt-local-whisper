@@ -1,4 +1,5 @@
 .gocache/
+.gomodcache
 bin/
 dist/
 models/
