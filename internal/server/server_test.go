@@ -18,6 +18,7 @@ import (
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
@@ -40,7 +41,8 @@ func TestStreamTranscriptionStub(t *testing.T) {
 		LogLevel:     "debug",
 	}
 	engine := whisper.NewStubEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.ModelVariant)
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), engine))
+	recorder := telemetry.NewRecorder(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), engine, recorder))
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil &&
@@ -130,5 +132,19 @@ func TestStreamTranscriptionStub(t *testing.T) {
 
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatalf("expected EOF after flush, got %v", err)
+	}
+
+	snapshot := recorder.Snapshot()
+	if snapshot.TotalStreams != 1 {
+		t.Fatalf("unexpected TotalStreams: %d", snapshot.TotalStreams)
+	}
+	if snapshot.TotalSegments != 1 {
+		t.Fatalf("unexpected TotalSegments: %d", snapshot.TotalSegments)
+	}
+	if snapshot.TotalTranscripts != 2 {
+		t.Fatalf("unexpected TotalTranscripts: %d", snapshot.TotalTranscripts)
+	}
+	if snapshot.TotalFinalTranscripts != 1 {
+		t.Fatalf("unexpected TotalFinalTranscripts: %d", snapshot.TotalFinalTranscripts)
 	}
 }

@@ -12,12 +12,15 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
@@ -38,6 +41,8 @@ func main() {
 		"language", cfg.Language,
 		"data_dir", cfg.DataDir,
 	)
+
+	recorder := telemetry.NewRecorder(logger)
 
 	manager, err := models.NewManager(cfg.DataDir, logger)
 	if err != nil {
@@ -66,11 +71,23 @@ func main() {
 	defer lis.Close()
 
 	grpcServer := grpc.NewServer()
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, engine))
+	healthServer := health.NewServer()
+	healthgrpc.RegisterHealthServer(grpcServer, healthServer)
+
+	serviceName := napv1.SpeechToTextService_ServiceDesc.ServiceName
+	healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_NOT_SERVING)
+	healthServer.SetServingStatus(serviceName, healthgrpc.HealthCheckResponse_NOT_SERVING)
+
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, engine, recorder))
+
+	healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(serviceName, healthgrpc.HealthCheckResponse_SERVING)
 
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutdown requested, stopping gRPC server")
+		healthServer.SetServingStatus(serviceName, healthgrpc.HealthCheckResponse_NOT_SERVING)
+		healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_NOT_SERVING)
 
 		stopped := make(chan struct{})
 		go func() {
@@ -89,6 +106,17 @@ func main() {
 	if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 		logger.Error("gRPC server terminated with error", "error", err)
 		os.Exit(1)
+	}
+
+	if snapshot := recorder.Snapshot(); snapshot.TotalStreams > 0 {
+		logger.Info("telemetry totals",
+			"total_streams", snapshot.TotalStreams,
+			"total_segments", snapshot.TotalSegments,
+			"total_transcripts", snapshot.TotalTranscripts,
+			"total_final_transcripts", snapshot.TotalFinalTranscripts,
+			"total_bytes", snapshot.TotalBytes,
+			"total_flushes", snapshot.TotalFlushes,
+		)
 	}
 
 	logger.Info("adapter stopped")

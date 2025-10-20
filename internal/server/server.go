@@ -7,6 +7,7 @@ import (
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
@@ -14,18 +15,22 @@ import (
 type Server struct {
 	napv1.UnimplementedSpeechToTextServiceServer
 
-	cfg    config.Config
-	log    *slog.Logger
-	engine whisper.Engine
+	cfg     config.Config
+	log     *slog.Logger
+	engine  whisper.Engine
+	metrics *telemetry.Recorder
 }
 
 // New returns a new Server instance.
-func New(cfg config.Config, logger *slog.Logger, engine whisper.Engine) *Server {
+func New(cfg config.Config, logger *slog.Logger, engine whisper.Engine, metrics *telemetry.Recorder) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if engine == nil {
 		panic("server: engine must not be nil")
+	}
+	if metrics == nil {
+		metrics = telemetry.NewRecorder(logger)
 	}
 	return &Server{
 		cfg: cfg,
@@ -34,18 +39,25 @@ func New(cfg config.Config, logger *slog.Logger, engine whisper.Engine) *Server 
 			"model_variant", cfg.ModelVariant,
 			"language", cfg.Language,
 		),
-		engine: engine,
+		engine:  engine,
+		metrics: metrics,
 	}
 }
 
 // StreamTranscription consumes PCM segments and emits stub transcripts that
 // describe the received payload. This allows exercising the adapter runner and
 // daemon integration before Whisper bindings are wired in.
-func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTranscriptionServer) error {
+func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTranscriptionServer) (err error) {
 	var (
-		initLogged bool
+		initLogged    bool
+		streamMetrics *telemetry.StreamMetrics
 	)
 	ctx := stream.Context()
+	defer func() {
+		if streamMetrics != nil {
+			streamMetrics.Finish(err)
+		}
+	}()
 
 	for {
 		req, err := stream.Recv()
@@ -61,6 +73,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		}
 
 		if !initLogged {
+			streamMetrics = s.metrics.StartStream(req.GetSessionId(), req.GetStreamId(), req.GetMetadata())
 			s.log.Info("stream opened",
 				"session_id", req.GetSessionId(),
 				"stream_id", req.GetStreamId(),
@@ -76,6 +89,9 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		}
 
 		if segment != nil && len(segment.GetAudio()) > 0 {
+			if streamMetrics != nil {
+				streamMetrics.RecordSegment(sequence, len(segment.GetAudio()), req.GetFlush() || segment.GetLast())
+			}
 			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), whisper.Options{
 				Language: s.cfg.Language,
 				Final:    req.GetFlush() || segment.GetLast(),
@@ -85,18 +101,21 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 				s.log.Error("engine segment failure", "error", err)
 				return err
 			}
-			if err := s.sendResults(stream, sequence, results); err != nil {
+			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
 				return err
 			}
 		}
 
 		if req.GetFlush() {
+			if streamMetrics != nil {
+				streamMetrics.RecordFlush()
+			}
 			results, err := s.engine.Flush(ctx, whisper.Options{Language: s.cfg.Language, Final: true})
 			if err != nil {
 				s.log.Error("engine flush failure", "error", err)
 				return err
 			}
-			if err := s.sendResults(stream, sequence, results); err != nil {
+			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
 				return err
 			}
 			s.log.Info("stream flushed",
@@ -108,8 +127,11 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 	}
 }
 
-func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []whisper.Result) error {
+func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []whisper.Result, metrics *telemetry.StreamMetrics) error {
 	for _, res := range results {
+		if metrics != nil {
+			metrics.RecordTranscript(sequence, res.Text, res.Final)
+		}
 		transcript := &napv1.Transcript{
 			Sequence:   sequence,
 			Text:       res.Text,
