@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
@@ -32,8 +33,19 @@ func TestNewEngineFallsBackWhenModelMissing(t *testing.T) {
 		t.Fatalf("NewManager error: %v", err)
 	}
 
-	cfg := config.Config{ModelVariant: "base"}
-	engine, modelPath, err := NewEngine(cfg, manager, nil)
+	cfg := config.Config{
+		ModelVariant:  "base",
+		ModelPath:     filepath.Join(tempDir, "missing.gguf"),
+		UseStubEngine: true,
+	}
+	emptyManifest := models.Manifest{Variants: map[string]models.Variant{}}
+	engine, modelPath, err := newEngineWithOptions(cfg, manager, nil, engineOptions{
+		manifest: emptyManifest,
+		ensure: models.EnsureOptions{
+			Manifest: emptyManifest,
+			Override: cfg.ModelPath,
+		},
+	})
 	if err == nil {
 		t.Fatalf("expected error due to missing model")
 	}
@@ -52,20 +64,49 @@ func TestNewEngineResolvesModel(t *testing.T) {
 		t.Fatalf("NewManager error: %v", err)
 	}
 
-	path := manager.ModelsDir() + "/base.gguf"
+	path := manager.ModelsDir() + "/ggml-base.en.bin"
 	if err := os.WriteFile(path, []byte("stub"), 0o644); err != nil {
 		t.Fatalf("WriteFile error: %v", err)
 	}
 
 	cfg := config.Config{ModelVariant: "base"}
-	engine, modelPath, err := NewEngine(cfg, manager, nil)
-	if !errors.Is(err, ErrNativeEngineUnavailable) {
-		t.Fatalf("expected ErrNativeEngineUnavailable, got %v", err)
+	manifest := models.Manifest{Variants: map[string]models.Variant{
+		"base": {
+			DisplayName: "Base",
+			Filename:    "ggml-base.en.bin",
+			URL:         "",
+		},
+	}}
+	if NativeAvailable() {
+		cfg.UseStubEngine = true
 	}
-	if modelPath != path {
-		t.Fatalf("unexpected model path: want %s, got %s", path, modelPath)
-	}
-	if _, ok := engine.(*StubEngine); !ok {
-		t.Fatalf("expected stub engine")
+	engine, modelPath, err := newEngineWithOptions(cfg, manager, nil, engineOptions{
+		manifest: manifest,
+		ensure: models.EnsureOptions{
+			Manifest: manifest,
+			Override: cfg.ModelPath,
+		},
+	})
+	if NativeAvailable() && cfg.UseStubEngine {
+		if err != nil {
+			t.Fatalf("expected stub initialisation, got %v", err)
+		}
+		if modelPath != "" {
+			t.Fatalf("expected empty model path when stub forced, got %s", modelPath)
+		}
+	} else if NativeAvailable() {
+		if err != nil {
+			t.Fatalf("expected native engine initialisation, got %v", err)
+		}
+		if modelPath != path {
+			t.Fatalf("unexpected model path: want %s, got %s", path, modelPath)
+		}
+	} else {
+		if !errors.Is(err, ErrNativeEngineUnavailable) && err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := engine.(*StubEngine); !ok {
+			t.Fatalf("expected stub engine when native unavailable")
+		}
 	}
 }
