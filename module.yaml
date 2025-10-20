@@ -1,0 +1,36 @@
+# TODO: align with the final manifest schema once Nupi registry is formalised.
+apiVersion: nap.nupi.ai/v1alpha1
+kind: ModuleManifest
+metadata:
+  name: Nupi Whisper Local STT
+  slug: module-nupi-whisper-local-stt
+  description: Local speech-to-text adapter backed by Whisper.
+  version: 0.1.0-dev
+spec:
+  moduleType: stt
+  mode: local
+  homepage: https://github.com/nupi-ai/module-nupi-whisper-local-stt
+  compatibility:
+    # Placeholder until Nupi publishes semver-tagged releases.
+    nupi: ">=0.0.0-dev"
+  entrypoint:
+    command: ./module-nupi-whisper-local-stt
+    args: []
+    transport: grpc
+    listenEnv: NUPI_ADAPTER_LISTEN_ADDR
+  options:
+    model_variant:
+      type: enum
+      default: base
+      values: [tiny, base, small, medium, large]
+      description: Selects the Whisper model size.
+    language:
+      type: string
+      default: auto
+      description: ISO-639 language hint for decoding ("auto" for detection).
+  assets:
+    models:
+      cacheDirEnv: NUPI_MODULE_DATA_DIR
+  telemetry:
+    stdout: true
+    stderr: true

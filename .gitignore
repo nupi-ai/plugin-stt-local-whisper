@@ -1,0 +1,6 @@
+.gocache/
+bin/
+dist/
+models/
+.DS_Store
+*.log
