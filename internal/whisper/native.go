@@ -33,7 +33,10 @@ func NewNativeEngine(modelPath string) (Engine, error) {
 	}
 	cPath := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cPath))
-	ctx := C.whisper_init_from_file(cPath)
+	cParams := C.whisper_context_default_params()
+	cParams.use_gpu = C.bool(false)
+
+	ctx := C.whisper_init_from_file_with_params(cPath, cParams)
 	if ctx == nil {
 		return nil, fmt.Errorf("whisper: failed to initialise context for %s", modelPath)
 	}
