@@ -28,6 +28,9 @@ spec:
       type: string
       default: auto
       description: ISO-639 language hint for decoding ("auto" for detection).
+    model_path:
+      type: string
+      description: Optional absolute path to a GGUF model; overrides variant-based lookup.
   assets:
     models:
       cacheDirEnv: NUPI_MODULE_DATA_DIR

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ func (l Loader) Load() (Config, error) {
 
 	cfg := Config{
 		ListenAddr: DefaultListenAddr,
+		DataDir:    DefaultDataDir,
 	}
 
 	if raw, ok := l.Lookup("NUPI_MODULE_CONFIG"); ok && strings.TrimSpace(raw) != "" {
@@ -34,6 +36,9 @@ func (l Loader) Load() (Config, error) {
 	overrideString(l.Lookup, "NUPI_LOG_LEVEL", &cfg.LogLevel)
 	overrideString(l.Lookup, "NUPI_MODEL_VARIANT", &cfg.ModelVariant)
 	overrideString(l.Lookup, "NUPI_LANGUAGE_HINT", &cfg.Language)
+	overrideString(l.Lookup, "NUPI_MODULE_DATA_DIR", &cfg.DataDir)
+	overrideString(l.Lookup, "NUPI_MODEL_PATH", &cfg.ModelPath)
+	overrideBool(l.Lookup, "NUPI_WHISPER_STUB", &cfg.UseStubEngine)
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -43,10 +48,13 @@ func (l Loader) Load() (Config, error) {
 
 func applyJSON(raw string, cfg *Config) error {
 	type jsonConfig struct {
-		ListenAddr   string `json:"listen_addr"`
-		ModelVariant string `json:"model_variant"`
-		Language     string `json:"language"`
-		LogLevel     string `json:"log_level"`
+		ListenAddr    string `json:"listen_addr"`
+		ModelVariant  string `json:"model_variant"`
+		Language      string `json:"language"`
+		LogLevel      string `json:"log_level"`
+		DataDir       string `json:"data_dir"`
+		ModelPath     string `json:"model_path"`
+		UseStubEngine *bool  `json:"use_stub_engine"`
 	}
 	var payload jsonConfig
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -64,6 +72,15 @@ func applyJSON(raw string, cfg *Config) error {
 	if payload.LogLevel != "" {
 		cfg.LogLevel = payload.LogLevel
 	}
+	if payload.DataDir != "" {
+		cfg.DataDir = payload.DataDir
+	}
+	if payload.ModelPath != "" {
+		cfg.ModelPath = payload.ModelPath
+	}
+	if payload.UseStubEngine != nil {
+		cfg.UseStubEngine = *payload.UseStubEngine
+	}
 	return nil
 }
 
@@ -73,5 +90,21 @@ func overrideString(lookup func(string) (string, bool), key string, target *stri
 	}
 	if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
 		*target = strings.TrimSpace(value)
+	}
+}
+
+func overrideBool(lookup func(string) (string, bool), key string, target *bool) {
+	if lookup == nil || target == nil {
+		return
+	}
+	if value, ok := lookup(key); ok {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return
+		}
+		parsed, err := strconv.ParseBool(trimmed)
+		if err == nil {
+			*target = parsed
+		}
 	}
 }

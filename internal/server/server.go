@@ -1,27 +1,31 @@
 package server
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 // Server implements the SpeechToTextService and provides stubbed transcripts.
 type Server struct {
 	napv1.UnimplementedSpeechToTextServiceServer
 
-	cfg config.Config
-	log *slog.Logger
+	cfg    config.Config
+	log    *slog.Logger
+	engine whisper.Engine
 }
 
 // New returns a new Server instance.
-func New(cfg config.Config, logger *slog.Logger) *Server {
+func New(cfg config.Config, logger *slog.Logger, engine whisper.Engine) *Server {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if engine == nil {
+		panic("server: engine must not be nil")
 	}
 	return &Server{
 		cfg: cfg,
@@ -30,6 +34,7 @@ func New(cfg config.Config, logger *slog.Logger) *Server {
 			"model_variant", cfg.ModelVariant,
 			"language", cfg.Language,
 		),
+		engine: engine,
 	}
 }
 
@@ -40,6 +45,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 	var (
 		initLogged bool
 	)
+	ctx := stream.Context()
 
 	for {
 		req, err := stream.Recv()
@@ -70,39 +76,28 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		}
 
 		if segment != nil && len(segment.GetAudio()) > 0 {
-			text := fmt.Sprintf("[stub:%s] received %d bytes", s.cfg.ModelVariant, len(segment.GetAudio()))
-			resp := &napv1.Transcript{
-				Sequence:   sequence,
-				Text:       text,
-				Confidence: 0.42,
-				Final:      req.GetFlush() || segment.GetLast(),
-				Metadata: map[string]string{
-					"generator":     "nupi-whisper-local-stt-stub",
-					"model_variant": s.cfg.ModelVariant,
-					"language":      s.cfg.Language,
-				},
+			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), whisper.Options{
+				Language: s.cfg.Language,
+				Final:    req.GetFlush() || segment.GetLast(),
+				Sequence: sequence,
+			})
+			if err != nil {
+				s.log.Error("engine segment failure", "error", err)
+				return err
 			}
-			if err := stream.Send(resp); err != nil {
-				s.log.Error("failed to send transcript", "error", err)
+			if err := s.sendResults(stream, sequence, results); err != nil {
 				return err
 			}
 		}
 
 		if req.GetFlush() {
-			if segment == nil || len(segment.GetAudio()) == 0 {
-				resp := &napv1.Transcript{
-					Sequence:   sequence,
-					Text:       "[stub] stream closed",
-					Confidence: 1.0,
-					Final:      true,
-					Metadata: map[string]string{
-						"generator": "nupi-whisper-local-stt-stub",
-					},
-				}
-				if err := stream.Send(resp); err != nil {
-					s.log.Error("failed to send flush transcript", "error", err)
-					return err
-				}
+			results, err := s.engine.Flush(ctx, whisper.Options{Language: s.cfg.Language, Final: true})
+			if err != nil {
+				s.log.Error("engine flush failure", "error", err)
+				return err
+			}
+			if err := s.sendResults(stream, sequence, results); err != nil {
+				return err
 			}
 			s.log.Info("stream flushed",
 				"session_id", req.GetSessionId(),
@@ -111,4 +106,25 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 			return nil
 		}
 	}
+}
+
+func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []whisper.Result) error {
+	for _, res := range results {
+		transcript := &napv1.Transcript{
+			Sequence:   sequence,
+			Text:       res.Text,
+			Confidence: res.Confidence,
+			Final:      res.Final,
+			Metadata: map[string]string{
+				"generator":     "nupi-whisper-local-stt",
+				"model_variant": s.cfg.ModelVariant,
+				"language":      s.cfg.Language,
+			},
+		}
+		if err := stream.Send(transcript); err != nil {
+			s.log.Error("failed to send transcript", "error", err)
+			return err
+		}
+	}
+	return nil
 }

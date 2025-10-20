@@ -18,6 +18,7 @@ import (
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 const bufSize = 1024 * 1024
@@ -38,7 +39,8 @@ func TestStreamTranscriptionStub(t *testing.T) {
 		Language:     "pl",
 		LogLevel:     "debug",
 	}
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	engine := whisper.NewStubEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.ModelVariant)
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), engine))
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil &&
@@ -122,7 +124,7 @@ func TestStreamTranscriptionStub(t *testing.T) {
 	if !resp2.GetFinal() {
 		t.Fatalf("expected second transcript to be final")
 	}
-	if resp2.GetText() != "[stub] stream closed" {
+	if resp2.GetText() != "[stub:small] total bytes 4" {
 		t.Fatalf("unexpected final transcript: %q", resp2.GetText())
 	}
 

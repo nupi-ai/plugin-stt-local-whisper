@@ -8,15 +8,19 @@ const (
 	DefaultModel      = "base"
 	DefaultLanguage   = "auto"
 	DefaultLogLevel   = "info"
+	DefaultDataDir    = "data"
 )
 
 // Config captures bootstrap configuration extracted from environment variables
 // or injected JSON payload (`NUPI_MODULE_CONFIG`).
 type Config struct {
-	ListenAddr   string
-	ModelVariant string
-	Language     string
-	LogLevel     string
+	ListenAddr    string
+	ModelVariant  string
+	Language      string
+	LogLevel      string
+	DataDir       string
+	ModelPath     string
+	UseStubEngine bool
 }
 
 // Validate applies defaults and raises an error when required fields are
@@ -33,6 +37,9 @@ func (c *Config) Validate() error {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = DefaultLogLevel
+	}
+	if c.DataDir == "" {
+		c.DataDir = DefaultDataDir
 	}
 	return nil
 }

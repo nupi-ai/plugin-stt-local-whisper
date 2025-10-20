@@ -16,7 +16,9 @@ import (
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 func main() {
@@ -34,7 +36,27 @@ func main() {
 		"listen_addr", cfg.ListenAddr,
 		"model_variant", cfg.ModelVariant,
 		"language", cfg.Language,
+		"data_dir", cfg.DataDir,
 	)
+
+	manager, err := models.NewManager(cfg.DataDir, logger)
+	if err != nil {
+		logger.Error("failed to initialise model manager", "error", err)
+		os.Exit(1)
+	}
+
+	engine, modelPath, engineErr := whisper.NewEngine(cfg, manager, logger)
+	if engineErr != nil {
+		logger.Warn("engine initialised with warnings", "error", engineErr)
+	}
+	if modelPath != "" {
+		logger.Info("resolved model path", "path", modelPath)
+	}
+	defer func() {
+		if err := engine.Close(); err != nil {
+			logger.Warn("failed to close engine", "error", err)
+		}
+	}()
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
@@ -44,7 +66,7 @@ func main() {
 	defer lis.Close()
 
 	grpcServer := grpc.NewServer()
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger))
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, engine))
 
 	go func() {
 		<-ctx.Done()
