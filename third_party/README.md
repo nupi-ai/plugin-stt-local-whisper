@@ -23,4 +23,4 @@ git fetch --recurse-submodules
 
 The native bindings rely on the optional `whispercpp` build tag. Local development without
 initialising the submodule still works (stub engine is used), but release builds must ensure
-`third_party/whisper.cpp` is present and compiled.
+`third_party/whisper.cpp` is present and compiled (`make whispercpp`).
