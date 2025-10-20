@@ -17,14 +17,23 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"unsafe"
 )
+
+const maxAudioBytes = 10 * 1024 * 1024 // safety cap per stream
 
 func NativeAvailable() bool { return true }
 
 type NativeEngine struct {
-	ctx   *C.struct_whisper_context
-	audio []byte
+	mu      sync.Mutex
+	inferMu sync.Mutex
+
+	ctx      *C.struct_whisper_context
+	audio    []byte
+	lastText string
+	language string
 }
 
 func NewNativeEngine(modelPath string) (Engine, error) {
@@ -40,28 +49,140 @@ func NewNativeEngine(modelPath string) (Engine, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("whisper: failed to initialise context for %s", modelPath)
 	}
-	return &NativeEngine{ctx: ctx, audio: make([]byte, 0, 1<<16)}, nil
+	return &NativeEngine{
+		ctx: ctx,
+	}, nil
 }
 
 func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts Options) ([]Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(audio) == 0 {
 		return nil, nil
 	}
+
+	lang := normaliseLanguage(opts.Language, e.language)
+
+	e.mu.Lock()
+	if len(e.audio)+len(audio) > maxAudioBytes {
+		e.mu.Unlock()
+		return nil, fmt.Errorf("whisper: audio buffer overflow (max %d bytes)", maxAudioBytes)
+	}
 	e.audio = append(e.audio, audio...)
-	return nil, nil
+	buffer := append([]byte(nil), e.audio...)
+	previous := e.lastText
+	e.mu.Unlock()
+
+	combined, err := e.runInference(ctx, buffer, lang)
+	if err != nil {
+		return nil, err
+	}
+
+	e.mu.Lock()
+	e.language = lang
+	e.audio = buffer
+	delta := diffTranscript(previous, combined)
+	e.lastText = combined
+	e.mu.Unlock()
+
+	if delta == "" {
+		return nil, nil
+	}
+
+	return []Result{
+		{
+			Text:       delta,
+			Confidence: 0.0,
+			Final:      false,
+		},
+	}, nil
 }
 
 func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error) {
-	if len(e.audio) == 0 {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	lang := normaliseLanguage(opts.Language, e.language)
+
+	e.mu.Lock()
+	buffer := append([]byte(nil), e.audio...)
+	previous := e.lastText
+	e.mu.Unlock()
+
+	var (
+		combined string
+		err      error
+	)
+	if len(buffer) > 0 {
+		combined, err = e.runInference(ctx, buffer, lang)
+	} else {
+		combined = previous
+	}
+	if err != nil {
+		e.mu.Lock()
+		e.resetLocked()
+		e.mu.Unlock()
+		return nil, err
+	}
+
+	finalText := strings.TrimSpace(combined)
+
+	e.mu.Lock()
+	e.resetLocked()
+	e.mu.Unlock()
+
+	if finalText == "" {
 		return nil, nil
 	}
-	samples := pcmBytesToFloat32(e.audio)
+
+	return []Result{{
+		Text:       finalText,
+		Confidence: 1.0,
+		Final:      true,
+	}}, nil
+}
+
+func (e *NativeEngine) Close() error {
+	e.inferMu.Lock()
+	defer e.inferMu.Unlock()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.resetLocked()
+	if e.ctx != nil {
+		C.whisper_free(e.ctx)
+		e.ctx = nil
+	}
+	return nil
+}
+
+func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if len(audio) == 0 {
+		return "", nil
+	}
+
+	samples := pcmBytesToFloat32(audio)
 	if len(samples) == 0 {
-		e.audio = e.audio[:0]
-		return nil, nil
+		return "", nil
 	}
+
+	e.inferMu.Lock()
+	defer e.inferMu.Unlock()
+
+	state := C.whisper_init_state(e.ctx)
+	if state == nil {
+		return "", errors.New("whisper: failed to initialise state")
+	}
+	defer C.whisper_free_state(state)
+
 	cSamples := (*C.float)(unsafe.Pointer(&samples[0]))
 	nSamples := C.int(len(samples))
+
 	params := C.whisper_full_default_params(C.WHISPER_SAMPLING_GREEDY)
 	params.print_progress = C.bool(false)
 	params.print_realtime = C.bool(false)
@@ -69,28 +190,29 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 	params.translate = C.bool(false)
 	params.no_context = C.bool(true)
 	params.single_segment = C.bool(false)
-	lang := opts.Language
+
+	lang := strings.TrimSpace(language)
 	if lang == "" {
 		lang = "auto"
 	}
 	cLang := C.CString(lang)
 	params.language = cLang
-	defer C.free(unsafe.Pointer(cLang))
-	if ret := C.whisper_full(e.ctx, params, cSamples, nSamples); ret != 0 {
-		e.audio = e.audio[:0]
-		return nil, fmt.Errorf("whisper: inference failed with code %d", int(ret))
+	if strings.EqualFold(lang, "auto") {
+		params.detect_language = C.bool(true)
 	}
-	results := collectResults(e.ctx)
-	e.audio = e.audio[:0]
-	return results, nil
+	defer C.free(unsafe.Pointer(cLang))
+
+	if ret := C.whisper_full_with_state(e.ctx, state, params, cSamples, nSamples); ret != 0 {
+		return "", fmt.Errorf("whisper: inference failed with code %d", int(ret))
+	}
+
+	return collectTextFromState(state), nil
 }
 
-func (e *NativeEngine) Close() error {
-	if e.ctx != nil {
-		C.whisper_free(e.ctx)
-		e.ctx = nil
-	}
-	return nil
+func (e *NativeEngine) resetLocked() {
+	e.audio = nil
+	e.lastText = ""
+	e.language = ""
 }
 
 func pcmBytesToFloat32(buf []byte) []float32 {
@@ -107,15 +229,24 @@ func pcmBytesToFloat32(buf []byte) []float32 {
 	return samples
 }
 
-func collectResults(ctx *C.struct_whisper_context) []Result {
-	count := int(C.whisper_full_n_segments(ctx))
+func collectTextFromState(state *C.struct_whisper_state) string {
+	if state == nil {
+		return ""
+	}
+	count := int(C.whisper_full_n_segments_from_state(state))
 	if count == 0 {
-		return nil
+		return ""
 	}
-	out := make([]Result, 0, count)
+	var builder strings.Builder
 	for i := 0; i < count; i++ {
-		text := C.GoString(C.whisper_full_get_segment_text(ctx, C.int(i)))
-		out = append(out, Result{Text: text, Confidence: 1.0, Final: true})
+		text := strings.TrimSpace(C.GoString(C.whisper_full_get_segment_text_from_state(state, C.int(i))))
+		if text == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte(' ')
+		}
+		builder.WriteString(text)
 	}
-	return out
+	return strings.TrimSpace(builder.String())
 }
