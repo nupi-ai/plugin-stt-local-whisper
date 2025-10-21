@@ -9,6 +9,13 @@ package whisper
 
 #include "stdlib.h"
 #include "include/whisper.h"
+#include "ggml.h"
+
+bool whisperGoAbort(void * user_data);
+
+static bool whisper_abort_shim(void * user_data) {
+	return whisperGoAbort(user_data);
+}
 */
 import "C"
 
@@ -17,6 +24,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"runtime/cgo"
 	"strings"
 	"sync"
 	"unsafe"
@@ -202,7 +210,15 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 	}
 	defer C.free(unsafe.Pointer(cLang))
 
+	handle := cgo.NewHandle(ctx)
+	defer handle.Delete()
+	params.abort_callback = (C.ggml_abort_callback)(C.whisper_abort_shim)
+	params.abort_callback_user_data = unsafe.Pointer(&handle)
+
 	if ret := C.whisper_full_with_state(e.ctx, state, params, cSamples, nSamples); ret != 0 {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		return "", fmt.Errorf("whisper: inference failed with code %d", int(ret))
 	}
 
@@ -227,6 +243,14 @@ func pcmBytesToFloat32(buf []byte) []float32 {
 		samples[i] = float32(val) / 32768.0
 	}
 	return samples
+}
+
+//export whisperGoAbort
+func whisperGoAbort(userData unsafe.Pointer) C.bool {
+	if shouldAbort(userData) {
+		return C.bool(true)
+	}
+	return C.bool(false)
 }
 
 func collectTextFromState(state *C.struct_whisper_state) string {
