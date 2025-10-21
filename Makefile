@@ -15,7 +15,7 @@ build-whisper:
 dist-whispercpp: whispercpp
 	cmake -E make_directory dist
 	DYLD_LIBRARY_PATH=$(WHISPER_LIB_DIR) LD_LIBRARY_PATH=$(WHISPER_LIB_DIR) \
-		CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build -o dist/module-nupi-whisper-local-stt-whisper ./cmd/adapter
+		CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build -o dist/nupi-whisper-local-stt ./cmd/adapter
 
 test:
 	GOCACHE=$(PWD)/.gocache go test -race ./...

@@ -3,7 +3,7 @@ apiVersion: nap.nupi.ai/v1alpha1
 kind: ModuleManifest
 metadata:
   name: Nupi Whisper Local STT
-  slug: module-nupi-whisper-local-stt
+  slug: nupi-whisper-local-stt
   description: Local speech-to-text adapter backed by Whisper.
   version: 0.1.0-dev
 spec:

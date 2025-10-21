@@ -141,17 +141,17 @@ func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptio
 		if metrics != nil {
 			metrics.RecordTranscript(sequence, res.Text, res.Final)
 		}
-		transcript := &napv1.Transcript{
-			Sequence:   sequence,
-			Text:       res.Text,
-			Confidence: res.Confidence,
-			Final:      res.Final,
-			Metadata: map[string]string{
-				"generator":     "nupi-whisper-local-stt",
-				"model_variant": s.cfg.ModelVariant,
-				"language":      s.cfg.Language,
-			},
-		}
+	transcript := &napv1.Transcript{
+		Sequence:   sequence,
+		Text:       res.Text,
+		Confidence: res.Confidence,
+		Final:      res.Final,
+		Metadata: map[string]string{
+			"generator":     "nupi-whisper-local-stt",
+			"model_variant": s.cfg.ModelVariant,
+			"language":      s.cfg.Language,
+		},
+	}
 		if err := stream.Send(transcript); err != nil {
 			s.log.Error("failed to send transcript", "error", err)
 			return err
