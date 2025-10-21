@@ -3,5 +3,6 @@
 bin/
 dist/
 models/
+testdata/models/
 .DS_Store
 *.log

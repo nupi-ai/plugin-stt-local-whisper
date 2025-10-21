@@ -12,10 +12,6 @@ package whisper
 #include "ggml.h"
 
 bool whisperGoAbort(void * user_data);
-
-static bool whisper_abort_shim(void * user_data) {
-	return whisperGoAbort(user_data);
-}
 */
 import "C"
 
@@ -212,7 +208,7 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 
 	handle := cgo.NewHandle(ctx)
 	defer handle.Delete()
-	params.abort_callback = (C.ggml_abort_callback)(C.whisper_abort_shim)
+	params.abort_callback = (C.ggml_abort_callback)(C.whisperGoAbort)
 	params.abort_callback_user_data = unsafe.Pointer(&handle)
 
 	if ret := C.whisper_full_with_state(e.ctx, state, params, cSamples, nSamples); ret != 0 {
