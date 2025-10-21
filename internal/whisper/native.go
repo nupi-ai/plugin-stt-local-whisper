@@ -38,6 +38,7 @@ type NativeEngine struct {
 	audio    []byte
 	lastText string
 	language string
+	lastConf float32
 }
 
 func NewNativeEngine(modelPath string) (Engine, error) {
@@ -78,7 +79,7 @@ func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts
 	previous := e.lastText
 	e.mu.Unlock()
 
-	combined, err := e.runInference(ctx, buffer, lang)
+	agg, err := e.runInference(ctx, buffer, lang)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +87,9 @@ func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts
 	e.mu.Lock()
 	e.language = lang
 	e.audio = buffer
-	delta := diffTranscript(previous, combined)
-	e.lastText = combined
+	delta := diffTranscript(previous, agg.Text)
+	e.lastText = agg.Text
+	e.lastConf = agg.Confidence
 	e.mu.Unlock()
 
 	if delta == "" {
@@ -97,7 +99,7 @@ func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts
 	return []Result{
 		{
 			Text:       delta,
-			Confidence: 0.0,
+			Confidence: agg.Confidence,
 			Final:      false,
 		},
 	}, nil
@@ -116,13 +118,20 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 	e.mu.Unlock()
 
 	var (
-		combined string
-		err      error
+		combined   string
+		confidence float32
+		err        error
 	)
 	if len(buffer) > 0 {
-		combined, err = e.runInference(ctx, buffer, lang)
+		var agg transcriptAggregate
+		agg, err = e.runInference(ctx, buffer, lang)
+		if err == nil {
+			combined = agg.Text
+			confidence = agg.Confidence
+		}
 	} else {
 		combined = previous
+		confidence = e.lastConf
 	}
 	if err != nil {
 		e.mu.Lock()
@@ -143,7 +152,7 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 
 	return []Result{{
 		Text:       finalText,
-		Confidence: 1.0,
+		Confidence: confidence,
 		Final:      true,
 	}}, nil
 }
@@ -162,17 +171,17 @@ func (e *NativeEngine) Close() error {
 	return nil
 }
 
-func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language string) (string, error) {
+func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language string) (transcriptAggregate, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return transcriptAggregate{}, err
 	}
 	if len(audio) == 0 {
-		return "", nil
+		return transcriptAggregate{}, nil
 	}
 
 	samples := pcmBytesToFloat32(audio)
 	if len(samples) == 0 {
-		return "", nil
+		return transcriptAggregate{}, nil
 	}
 
 	e.inferMu.Lock()
@@ -180,7 +189,7 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 
 	state := C.whisper_init_state(e.ctx)
 	if state == nil {
-		return "", errors.New("whisper: failed to initialise state")
+		return transcriptAggregate{}, errors.New("whisper: failed to initialise state")
 	}
 	defer C.whisper_free_state(state)
 
@@ -213,18 +222,19 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 
 	if ret := C.whisper_full_with_state(e.ctx, state, params, cSamples, nSamples); ret != 0 {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return transcriptAggregate{}, err
 		}
-		return "", fmt.Errorf("whisper: inference failed with code %d", int(ret))
+		return transcriptAggregate{}, fmt.Errorf("whisper: inference failed with code %d", int(ret))
 	}
 
-	return collectTextFromState(state), nil
+	return collectTranscriptAggregate(state), nil
 }
 
 func (e *NativeEngine) resetLocked() {
 	e.audio = nil
 	e.lastText = ""
 	e.language = ""
+	e.lastConf = 0
 }
 
 func pcmBytesToFloat32(buf []byte) []float32 {
@@ -249,24 +259,47 @@ func whisperGoAbort(userData unsafe.Pointer) C.bool {
 	return C.bool(false)
 }
 
-func collectTextFromState(state *C.struct_whisper_state) string {
+type transcriptAggregate struct {
+	Text       string
+	Confidence float32
+}
+
+func collectTranscriptAggregate(state *C.struct_whisper_state) transcriptAggregate {
 	if state == nil {
-		return ""
+		return transcriptAggregate{}
 	}
 	count := int(C.whisper_full_n_segments_from_state(state))
 	if count == 0 {
-		return ""
+		return transcriptAggregate{}
 	}
-	var builder strings.Builder
+	var (
+		builder      strings.Builder
+		sumProb      float64
+		tokenSamples int
+	)
 	for i := 0; i < count; i++ {
 		text := strings.TrimSpace(C.GoString(C.whisper_full_get_segment_text_from_state(state, C.int(i))))
-		if text == "" {
-			continue
+		if text != "" {
+			if builder.Len() > 0 {
+				builder.WriteByte(' ')
+			}
+			builder.WriteString(text)
 		}
-		if builder.Len() > 0 {
-			builder.WriteByte(' ')
+		tokenCount := int(C.whisper_full_n_tokens_from_state(state, C.int(i)))
+		for j := 0; j < tokenCount; j++ {
+			tokenData := C.whisper_full_get_token_data_from_state(state, C.int(i), C.int(j))
+			if tokenData.p > 0 {
+				sumProb += float64(tokenData.p)
+				tokenSamples++
+			}
 		}
-		builder.WriteString(text)
 	}
-	return strings.TrimSpace(builder.String())
+	confidence := float32(0)
+	if tokenSamples > 0 {
+		confidence = float32(sumProb / float64(tokenSamples))
+	}
+	return transcriptAggregate{
+		Text:       strings.TrimSpace(builder.String()),
+		Confidence: confidence,
+	}
 }

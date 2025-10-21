@@ -1,4 +1,4 @@
-.PHONY: all build test whispercpp clean
+.PHONY: all build build-whisper dist-whispercpp test whispercpp clean
 
 WHISPER_DIR := third_party/whisper.cpp
 WHISPER_BUILD := $(WHISPER_DIR)/build
@@ -11,6 +11,11 @@ build:
 
 build-whisper:
 	CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build ./...
+
+dist-whispercpp: whispercpp
+	cmake -E make_directory dist
+	DYLD_LIBRARY_PATH=$(WHISPER_LIB_DIR) LD_LIBRARY_PATH=$(WHISPER_LIB_DIR) \
+		CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build -o dist/module-nupi-whisper-local-stt-whisper ./cmd/adapter
 
 test:
 	GOCACHE=$(PWD)/.gocache go test -race ./...
