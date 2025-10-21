@@ -3,6 +3,7 @@ package server
 import (
 	"io"
 	"log/slog"
+	"time"
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
@@ -92,6 +93,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 			if streamMetrics != nil {
 				streamMetrics.RecordSegment(sequence, len(segment.GetAudio()), req.GetFlush() || segment.GetLast())
 			}
+			start := time.Now()
 			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), whisper.Options{
 				Language: s.cfg.Language,
 				Final:    req.GetFlush() || segment.GetLast(),
@@ -100,6 +102,9 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 			if err != nil {
 				s.log.Error("engine segment failure", "error", err)
 				return err
+			}
+			if streamMetrics != nil {
+				streamMetrics.RecordInferenceDuration(time.Since(start))
 			}
 			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
 				return err
@@ -110,10 +115,14 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 			if streamMetrics != nil {
 				streamMetrics.RecordFlush()
 			}
+			start := time.Now()
 			results, err := s.engine.Flush(ctx, whisper.Options{Language: s.cfg.Language, Final: true})
 			if err != nil {
 				s.log.Error("engine flush failure", "error", err)
 				return err
+			}
+			if streamMetrics != nil {
+				streamMetrics.RecordInferenceDuration(time.Since(start))
 			}
 			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
 				return err

@@ -18,6 +18,7 @@ type Recorder struct {
 	totalTranscripts      atomic.Uint64
 	totalFinalTranscripts atomic.Uint64
 	totalFlushes          atomic.Uint64
+	totalInferenceMillis  atomic.Uint64
 }
 
 // Snapshot captures cumulative metrics recorded so far.
@@ -29,6 +30,7 @@ type Snapshot struct {
 	TotalTranscripts      uint64
 	TotalFinalTranscripts uint64
 	TotalFlushes          uint64
+	TotalInferenceMillis  uint64
 }
 
 // NewRecorder constructs a Recorder using the provided logger.
@@ -54,6 +56,7 @@ func (r *Recorder) Snapshot() Snapshot {
 		TotalTranscripts:      r.totalTranscripts.Load(),
 		TotalFinalTranscripts: r.totalFinalTranscripts.Load(),
 		TotalFlushes:          r.totalFlushes.Load(),
+		TotalInferenceMillis:  r.totalInferenceMillis.Load(),
 	}
 }
 
@@ -73,6 +76,7 @@ type StreamMetrics struct {
 	finalTranscripts int
 	flushes          int
 	lastSequence     uint64
+	inferenceMillis  uint64
 	closed           atomic.Bool
 }
 
@@ -154,6 +158,20 @@ func (s *StreamMetrics) RecordFlush() {
 	s.recorder.totalFlushes.Add(1)
 }
 
+// RecordInferenceDuration accumulates inference duration for telemetry.
+func (s *StreamMetrics) RecordInferenceDuration(d time.Duration) {
+	if s == nil {
+		return
+	}
+	millis := d.Milliseconds()
+	if millis <= 0 {
+		return
+	}
+	s.inferenceMillis += uint64(millis)
+	s.recorder.totalInferenceMillis.Add(uint64(millis))
+	s.log.Debug("inference duration recorded", "duration_ms", millis)
+}
+
 // Finish logs a summary and updates active stream counters.
 func (s *StreamMetrics) Finish(err error) {
 	if s == nil {
@@ -173,6 +191,7 @@ func (s *StreamMetrics) Finish(err error) {
 		"transcripts", s.transcripts,
 		"final_transcripts", s.finalTranscripts,
 		"flushes", s.flushes,
+		"inference_ms", s.inferenceMillis,
 	}
 
 	if err != nil {

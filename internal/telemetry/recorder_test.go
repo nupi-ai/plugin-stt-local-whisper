@@ -23,6 +23,8 @@ func TestRecorderSnapshot(t *testing.T) {
 	stream.RecordSegment(2, 80, true)
 	stream.RecordTranscript(2, "hello world", true)
 	stream.RecordFlush()
+	stream.RecordInferenceDuration(42 * time.Millisecond)
+	stream.RecordInferenceDuration(8 * time.Millisecond)
 
 	time.Sleep(5 * time.Millisecond)
 	stream.Finish(nil)
@@ -46,6 +48,9 @@ func TestRecorderSnapshot(t *testing.T) {
 	if snapshot.TotalFlushes != 1 {
 		t.Fatalf("unexpected TotalFlushes: %d", snapshot.TotalFlushes)
 	}
+	if snapshot.TotalInferenceMillis != 50 {
+		t.Fatalf("unexpected TotalInferenceMillis: %d", snapshot.TotalInferenceMillis)
+	}
 	if snapshot.ActiveStreams != 0 {
 		t.Fatalf("expected zero active streams, got %d", snapshot.ActiveStreams)
 	}
@@ -61,6 +66,7 @@ func TestStreamFinishWithError(t *testing.T) {
 	stream := recorder.StartStream("s", "mic", nil)
 	stream.RecordSegment(1, 10, false)
 	stream.RecordFlush()
+	stream.RecordInferenceDuration(15 * time.Millisecond)
 	stream.Finish(io.EOF)
 
 	snapshot := recorder.Snapshot()
@@ -72,5 +78,8 @@ func TestStreamFinishWithError(t *testing.T) {
 	}
 	if snapshot.TotalFlushes != 1 {
 		t.Fatalf("unexpected flushes: %d", snapshot.TotalFlushes)
+	}
+	if snapshot.TotalInferenceMillis != 15 {
+		t.Fatalf("unexpected TotalInferenceMillis: %d", snapshot.TotalInferenceMillis)
 	}
 }
