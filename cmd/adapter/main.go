@@ -18,10 +18,11 @@ import (
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 func main() {
@@ -36,6 +37,8 @@ func main() {
 
 	logger := newLogger(cfg.LogLevel)
 	logger.Info("starting adapter",
+		"module", moduleinfo.Info.Name,
+		"module_slug", moduleinfo.Info.Slug,
 		"listen_addr", cfg.ListenAddr,
 		"model_variant", cfg.ModelVariant,
 		"language", cfg.Language,
@@ -50,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	engine, modelPath, engineErr := whisper.NewEngine(cfg, manager, logger)
+	eng, modelPath, engineErr := engine.New(cfg, manager, logger)
 	if engineErr != nil {
 		logger.Warn("engine initialised with warnings", "error", engineErr)
 	}
@@ -58,7 +61,7 @@ func main() {
 		logger.Info("resolved model path", "path", modelPath)
 	}
 	defer func() {
-		if err := engine.Close(); err != nil {
+		if err := eng.Close(); err != nil {
 			logger.Warn("failed to close engine", "error", err)
 		}
 	}()
@@ -78,7 +81,7 @@ func main() {
 	healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_NOT_SERVING)
 	healthServer.SetServingStatus(serviceName, healthgrpc.HealthCheckResponse_NOT_SERVING)
 
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, engine, recorder))
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, eng, recorder))
 
 	healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(serviceName, healthgrpc.HealthCheckResponse_SERVING)

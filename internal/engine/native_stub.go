@@ -1,6 +1,6 @@
 //go:build !whispercpp
 
-package whisper
+package engine
 
 import "context"
 

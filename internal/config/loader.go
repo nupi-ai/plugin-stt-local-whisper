@@ -38,7 +38,7 @@ func (l Loader) Load() (Config, error) {
 	overrideString(l.Lookup, "NUPI_LANGUAGE_HINT", &cfg.Language)
 	overrideString(l.Lookup, "NUPI_MODULE_DATA_DIR", &cfg.DataDir)
 	overrideString(l.Lookup, "NUPI_MODEL_PATH", &cfg.ModelPath)
-	overrideBool(l.Lookup, "NUPI_WHISPER_STUB", &cfg.UseStubEngine)
+	overrideBool(l.Lookup, "NUPI_MODULE_USE_STUB_ENGINE", &cfg.UseStubEngine)
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err

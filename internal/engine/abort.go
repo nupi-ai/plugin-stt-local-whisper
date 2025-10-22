@@ -1,6 +1,6 @@
 //go:build cgo
 
-package whisper
+package engine
 
 import (
 	"context"

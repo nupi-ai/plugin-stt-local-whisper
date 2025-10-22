@@ -1,4 +1,4 @@
-package whisper
+package engine
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
 )
 
-// ErrNativeEngineUnavailable indicates that a real whisper.cpp backend is not yet wired in.
-var ErrNativeEngineUnavailable = errors.New("whisper: native engine unavailable")
+// ErrNativeEngineUnavailable indicates that a real native backend is not yet wired in.
+var ErrNativeEngineUnavailable = errors.New("engine: native backend unavailable")
 
-// NewEngine resolves the desired model and returns an Engine instance.
+// New resolves the desired model and returns an Engine instance.
 // Currently the implementation falls back to the stub engine when the native backend
 // is unavailable or model artefacts cannot be ensured locally.
-func NewEngine(cfg config.Config, manager *models.Manager, logger *slog.Logger) (Engine, string, error) {
+func New(cfg config.Config, manager *models.Manager, logger *slog.Logger) (Engine, string, error) {
 	manifest, err := models.DefaultManifest()
 	if err != nil {
 		return newEngineWithOptions(cfg, manager, logger, engineOptions{})
@@ -76,7 +76,7 @@ func newEngineWithOptions(cfg config.Config, manager *models.Manager, logger *sl
 			logger.Error("native engine initialisation failed; using stub", "error", nativeErr, "model_path", modelPath)
 			return NewStubEngine(logger, cfg.ModelVariant), modelPath, nativeErr
 		}
-		logger.Info("native whisper engine ready", "model_path", modelPath)
+		logger.Info("native engine ready", "model_path", modelPath)
 		return native, modelPath, nil
 	}
 

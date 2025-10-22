@@ -1,4 +1,4 @@
-package whisper
+package engine
 
 import (
 	"errors"
@@ -12,9 +12,9 @@ import (
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
 )
 
-func TestNewEngineUsesStubWhenForced(t *testing.T) {
+func TestNewUsesStubWhenForced(t *testing.T) {
 	cfg := config.Config{ModelVariant: "base", UseStubEngine: true}
-	engine, modelPath, err := NewEngine(cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	engine, modelPath, err := New(cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -26,7 +26,7 @@ func TestNewEngineUsesStubWhenForced(t *testing.T) {
 	}
 }
 
-func TestNewEngineFallsBackWhenModelMissing(t *testing.T) {
+func TestNewFallsBackWhenModelMissing(t *testing.T) {
 	tempDir := t.TempDir()
 	manager, err := models.NewManager(tempDir, nil)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestNewEngineFallsBackWhenModelMissing(t *testing.T) {
 	}
 }
 
-func TestNewEngineResolvesModel(t *testing.T) {
+func TestNewResolvesModel(t *testing.T) {
 	tempDir := t.TempDir()
 	manager, err := models.NewManager(tempDir, nil)
 	if err != nil {

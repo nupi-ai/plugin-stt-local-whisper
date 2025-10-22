@@ -17,9 +17,9 @@ import (
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 const bufSize = 1024 * 1024
@@ -40,9 +40,9 @@ func TestStreamTranscriptionStub(t *testing.T) {
 		Language:     "pl",
 		LogLevel:     "debug",
 	}
-	engine := whisper.NewStubEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.ModelVariant)
+	eng := engine.NewStubEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.ModelVariant)
 	recorder := telemetry.NewRecorder(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), engine, recorder))
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), eng, recorder))
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil &&

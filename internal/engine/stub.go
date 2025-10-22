@@ -1,16 +1,18 @@
-package whisper
+package engine
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
 )
 
 // StubEngine produces deterministic transcripts without invoking Whisper.
 type StubEngine struct {
-	log         *slog.Logger
+	log          *slog.Logger
 	modelVariant string
-	totalBytes  int
+	totalBytes   int
 }
 
 // NewStubEngine returns an Engine that generates placeholder transcripts.
@@ -19,7 +21,11 @@ func NewStubEngine(logger *slog.Logger, modelVariant string) *StubEngine {
 		logger = slog.Default()
 	}
 	return &StubEngine{
-		log:          logger.With("component", "whisper.StubEngine", "model_variant", modelVariant),
+		log: logger.With(
+			"component", "engine.stub",
+			"module", moduleinfo.Info.Slug,
+			"model_variant", modelVariant,
+		),
 		modelVariant: modelVariant,
 	}
 }

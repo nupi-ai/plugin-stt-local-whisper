@@ -86,17 +86,27 @@ jobs:
         with:
           go-version: "1.24.0"
 
+      - name: Determine module name
+        id: module
+        run: |
+          module_name=$(go list -m)
+          module_binary=${module_name##*/}
+          echo "module_name=$module_name" >> "$GITHUB_OUTPUT"
+          echo "module_binary=$module_binary" >> "$GITHUB_OUTPUT"
+
       - name: Build adapter
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          MODULE_BINARY: ${{ steps.module.outputs.module_binary }}
+          EXT: ${{ matrix.ext }}
         run: |
           mkdir -p dist
-          output="dist/module-nupi-whisper-local-stt-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          output="dist/${MODULE_BINARY}-${GOOS}-${GOARCH}${EXT}"
           go build -o "$output" ./cmd/adapter
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
         with:
-          name: module-nupi-whisper-local-stt-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: ${{ steps.module.outputs.module_binary }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/

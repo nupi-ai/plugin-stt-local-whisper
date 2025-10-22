@@ -1,38 +1,50 @@
-.PHONY: all build build-whisper dist-whispercpp test whispercpp clean
+.PHONY: all build build-native dist dist-native test test-native native-lib clean
 
-WHISPER_DIR := third_party/whisper.cpp
-WHISPER_BUILD := $(WHISPER_DIR)/build
-WHISPER_LIB_DIR := $(WHISPER_BUILD)/src
+# === Module identity ===
+MODULE_NAME ?= $(shell go list -m)
+MODULE_BINARY ?= $(notdir $(MODULE_NAME))
+NATIVE_TAG := whispercpp
+NATIVE_DIR := third_party/whisper.cpp
+
+# === Native library build (Whisper-specific defaults) ===
+NATIVE_BUILD := $(NATIVE_DIR)/build
+NATIVE_LIB_DIR := $(NATIVE_BUILD)/src
+NATIVE_CMAKE_FLAGS ?= -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=OFF
+NATIVE_BUILD_TARGET ?= whisper
+NATIVE_LIB_PREFIX ?= libwhisper
 
 all: build
 
 build:
 	go build ./...
 
-build-whisper:
-	CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build ./...
+build-native: native-lib
+	CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go build ./...
 
-dist-whispercpp: whispercpp
+dist: build
 	cmake -E make_directory dist
-	DYLD_LIBRARY_PATH=$(WHISPER_LIB_DIR) LD_LIBRARY_PATH=$(WHISPER_LIB_DIR) \
-		CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go build -o dist/nupi-whisper-local-stt ./cmd/adapter
+	go build -o dist/$(MODULE_BINARY) ./cmd/adapter
+
+dist-native: native-lib
+	cmake -E make_directory dist
+	DYLD_LIBRARY_PATH=$(NATIVE_LIB_DIR) LD_LIBRARY_PATH=$(NATIVE_LIB_DIR) \
+		CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go build -o dist/$(MODULE_BINARY) ./cmd/adapter
 
 test:
 	GOCACHE=$(PWD)/.gocache go test -race ./...
 
-whispercpp:
-	cmake -E make_directory $(WHISPER_BUILD)
-	cmake -S $(WHISPER_DIR) -B $(WHISPER_BUILD) \
+native-lib:
+	cmake -E make_directory $(NATIVE_BUILD)
+	cmake -S $(NATIVE_DIR) -B $(NATIVE_BUILD) \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DWHISPER_BUILD_TESTS=OFF \
-		-DWHISPER_BUILD_EXAMPLES=OFF
-	cmake --build $(WHISPER_BUILD) --target whisper
+		$(NATIVE_CMAKE_FLAGS)
+	cmake --build $(NATIVE_BUILD) --target $(NATIVE_BUILD_TARGET)
 
-test-whisper: whispercpp
-	DYLD_LIBRARY_PATH=$(WHISPER_LIB_DIR) LD_LIBRARY_PATH=$(WHISPER_LIB_DIR) \
-		CGO_ENABLED=1 GOFLAGS="-tags=whispercpp" go test ./...
+test-native: native-lib
+	DYLD_LIBRARY_PATH=$(NATIVE_LIB_DIR) LD_LIBRARY_PATH=$(NATIVE_LIB_DIR) \
+		CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go test ./...
 
 clean:
-	cmake -E rm -f $(WHISPER_BUILD)/libwhisper.*
-	cmake -E rm -rf $(WHISPER_BUILD)
+	cmake -E rm -f $(NATIVE_BUILD)/$(NATIVE_LIB_PREFIX).*
+	cmake -E rm -rf $(NATIVE_BUILD)
 	go clean ./...

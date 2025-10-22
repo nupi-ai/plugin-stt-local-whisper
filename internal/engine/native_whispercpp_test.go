@@ -1,6 +1,6 @@
 //go:build whispercpp
 
-package whisper
+package engine
 
 import (
 	"context"
@@ -17,24 +17,9 @@ func TestNativeEngineTranscribesFixture(t *testing.T) {
 	if !NativeAvailable() {
 		t.Skip("native backend not available")
 	}
-	modelRel := filepath.Join("testdata", "models", "ggml-base.en.bin")
-	modelPath := locateFixture(t, modelRel, "run `go run ./cmd/tools/download_model --variant base --dir testdata`")
 
-	engine, err := NewNativeEngine(modelPath)
-	if err != nil {
-		t.Fatalf("NewNativeEngine: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := engine.Close(); cerr != nil {
-			t.Errorf("engine.Close: %v", cerr)
-		}
-	})
-
-	audioPath := locateFixture(t, filepath.Join("testdata", "test.wav"), "")
-	audio, sampleRate, err := loadPCM16LE(audioPath)
-	if err != nil {
-		t.Fatalf("loadPCM16LE: %v", err)
-	}
+	engine := openTestNativeEngine(t)
+	audio, sampleRate := loadTestAudio(t)
 	if sampleRate != 16000 {
 		t.Fatalf("unexpected sample rate: got %d, want 16000", sampleRate)
 	}
@@ -81,10 +66,15 @@ func TestNativeEngineTranscribesFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	for _, res := range results {
-		if res.Final {
-			finalText = res.Text
-		}
+	if len(results) == 0 {
+		t.Fatal("flush returned no transcripts")
+	}
+	finalResult := results[len(results)-1]
+	if !finalResult.Final {
+		t.Fatalf("expected final transcript flag, got Final=%v", finalResult.Final)
+	}
+	if finalResult.Text != "" {
+		finalText = finalResult.Text
 	}
 
 	if finalText == "" {
@@ -106,12 +96,80 @@ func TestNativeEngineTranscribesFixture(t *testing.T) {
 	}
 }
 
-func locateFixture(t *testing.T, relativePath string, suggestion string) string {
-	t.Helper()
+func TestNativeEngineTranscribeSegmentRespectsContextCancellation(t *testing.T) {
+	if !NativeAvailable() {
+		t.Skip("native backend not available")
+	}
+
+	engine := openTestNativeEngine(t)
+	audio, _ := loadTestAudio(t)
+	if len(audio) > 3200 {
+		audio = audio[:3200]
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := engine.TranscribeSegment(ctx, audio, Options{Language: "en"}); err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
+func TestNativeEngineRejectsOversizedAudio(t *testing.T) {
+	if !NativeAvailable() {
+		t.Skip("native backend not available")
+	}
+
+	engine := openTestNativeEngine(t)
+	big := make([]byte, maxAudioBytes+1)
+	if _, err := engine.TranscribeSegment(context.Background(), big, Options{}); err == nil || !strings.Contains(err.Error(), "audio buffer overflow") {
+		t.Fatalf("expected audio buffer overflow error, got %v", err)
+	}
+}
+
+func TestNewNativeEngineRejectsEmptyPath(t *testing.T) {
+	if _, err := NewNativeEngine(""); err == nil {
+		t.Fatal("expected error for empty model path")
+	}
+}
+
+func openTestNativeEngine(tb testing.TB) *NativeEngine {
+	tb.Helper()
+
+	modelRel := filepath.Join("testdata", "models", "ggml-base.en.bin")
+	modelPath := locateFixture(tb, modelRel, "run `go run ./cmd/tools/models/download --variant base --dir testdata`")
+	eng, err := NewNativeEngine(modelPath)
+	if err != nil {
+		tb.Fatalf("NewNativeEngine: %v", err)
+	}
+	native, ok := eng.(*NativeEngine)
+	if !ok {
+		tb.Fatalf("unexpected engine type %T", eng)
+	}
+	tb.Cleanup(func() {
+		if cerr := native.Close(); cerr != nil {
+			tb.Errorf("engine.Close: %v", cerr)
+		}
+	})
+	return native
+}
+
+func loadTestAudio(tb testing.TB) ([]byte, int) {
+	tb.Helper()
+	audioPath := locateFixture(tb, filepath.Join("testdata", "test.wav"), "")
+	audio, sampleRate, err := loadPCM16LE(audioPath)
+	if err != nil {
+		tb.Fatalf("loadPCM16LE: %v", err)
+	}
+	return audio, sampleRate
+}
+
+func locateFixture(tb testing.TB, relativePath string, suggestion string) string {
+	tb.Helper()
 
 	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		tb.Fatalf("getwd: %v", err)
 	}
 
 	visited := make([]string, 0, 4)
@@ -124,7 +182,7 @@ func locateFixture(t *testing.T, relativePath string, suggestion string) string 
 			return candidate
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("stat %s: %v", candidate, err)
+			tb.Fatalf("stat %s: %v", candidate, err)
 		}
 
 		parent := filepath.Dir(wd)
@@ -133,7 +191,7 @@ func locateFixture(t *testing.T, relativePath string, suggestion string) string 
 			if suggestion != "" {
 				msg = fmt.Sprintf("%s; %s", msg, suggestion)
 			}
-			t.Skip(msg)
+			tb.Skip(msg)
 		}
 		wd = parent
 	}

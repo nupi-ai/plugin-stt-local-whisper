@@ -37,14 +37,14 @@ func TestLoaderDefaults(t *testing.T) {
 
 func TestLoaderOverrides(t *testing.T) {
 	env := map[string]string{
-		"NUPI_MODULE_CONFIG":       `{"model_variant":"small","language":"pl","log_level":"debug","data_dir":"/tmp/data","model_path":"/tmp/models/custom.gguf","use_stub_engine":false}`,
-		"NUPI_ADAPTER_LISTEN_ADDR": "0.0.0.0:6000",
-		"NUPI_LOG_LEVEL":           "warn",
-		"NUPI_MODEL_VARIANT":       "medium",
-		"NUPI_LANGUAGE_HINT":       "en",
-		"NUPI_MODULE_DATA_DIR":     "/var/lib/nupi",
-		"NUPI_MODEL_PATH":          "/var/lib/nupi/models/medium.gguf",
-		"NUPI_WHISPER_STUB":        "true",
+		"NUPI_MODULE_CONFIG":          `{"model_variant":"small","language":"pl","log_level":"debug","data_dir":"/tmp/data","model_path":"/tmp/models/custom.gguf","use_stub_engine":false}`,
+		"NUPI_ADAPTER_LISTEN_ADDR":    "0.0.0.0:6000",
+		"NUPI_LOG_LEVEL":              "warn",
+		"NUPI_MODEL_VARIANT":          "medium",
+		"NUPI_LANGUAGE_HINT":          "en",
+		"NUPI_MODULE_DATA_DIR":        "/var/lib/nupi",
+		"NUPI_MODEL_PATH":             "/var/lib/nupi/models/medium.gguf",
+		"NUPI_MODULE_USE_STUB_ENGINE": "true",
 	}
 
 	loader := config.Loader{

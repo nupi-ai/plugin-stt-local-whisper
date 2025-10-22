@@ -8,8 +8,9 @@ import (
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
+	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
 	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/whisper"
 )
 
 // Server implements the SpeechToTextService and provides stubbed transcripts.
@@ -18,12 +19,12 @@ type Server struct {
 
 	cfg     config.Config
 	log     *slog.Logger
-	engine  whisper.Engine
+	engine  engine.Engine
 	metrics *telemetry.Recorder
 }
 
 // New returns a new Server instance.
-func New(cfg config.Config, logger *slog.Logger, engine whisper.Engine, metrics *telemetry.Recorder) *Server {
+func New(cfg config.Config, logger *slog.Logger, engine engine.Engine, metrics *telemetry.Recorder) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -94,7 +95,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 				streamMetrics.RecordSegment(sequence, len(segment.GetAudio()), req.GetFlush() || segment.GetLast())
 			}
 			start := time.Now()
-			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), whisper.Options{
+			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), engine.Options{
 				Language: s.cfg.Language,
 				Final:    req.GetFlush() || segment.GetLast(),
 				Sequence: sequence,
@@ -116,7 +117,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 				streamMetrics.RecordFlush()
 			}
 			start := time.Now()
-			results, err := s.engine.Flush(ctx, whisper.Options{Language: s.cfg.Language, Final: true})
+			results, err := s.engine.Flush(ctx, engine.Options{Language: s.cfg.Language, Final: true})
 			if err != nil {
 				s.log.Error("engine flush failure", "error", err)
 				return err
@@ -136,22 +137,18 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 	}
 }
 
-func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []whisper.Result, metrics *telemetry.StreamMetrics) error {
+func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []engine.Result, metrics *telemetry.StreamMetrics) error {
 	for _, res := range results {
 		if metrics != nil {
 			metrics.RecordTranscript(sequence, res.Text, res.Final)
 		}
-	transcript := &napv1.Transcript{
-		Sequence:   sequence,
-		Text:       res.Text,
-		Confidence: res.Confidence,
-		Final:      res.Final,
-		Metadata: map[string]string{
-			"generator":     "nupi-whisper-local-stt",
-			"model_variant": s.cfg.ModelVariant,
-			"language":      s.cfg.Language,
-		},
-	}
+		transcript := &napv1.Transcript{
+			Sequence:   sequence,
+			Text:       res.Text,
+			Confidence: res.Confidence,
+			Final:      res.Final,
+			Metadata:   moduleinfo.TranscriptMetadata(s.cfg.ModelVariant, s.cfg.Language),
+		}
 		if err := stream.Send(transcript); err != nil {
 			s.log.Error("failed to send transcript", "error", err)
 			return err

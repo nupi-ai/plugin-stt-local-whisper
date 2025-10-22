@@ -1,6 +1,6 @@
 //go:build whispercpp
 
-package whisper
+package engine
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../third_party/whisper.cpp -I${SRCDIR}/../../third_party/whisper.cpp/include -I${SRCDIR}/../../third_party/whisper.cpp/ggml/include
