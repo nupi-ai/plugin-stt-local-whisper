@@ -1,9 +1,10 @@
-# TODO: align with the final manifest schema once Nupi registry is formalised.
 apiVersion: nap.nupi.ai/v1alpha1
-kind: ModuleManifest
+kind: Plugin
+type: adapter
 metadata:
   name: Nupi Whisper Local STT
-  slug: nupi-whisper-local-stt
+  catalog: ai.nupi
+  slug: stt-local-whisper
   description: Local speech-to-text adapter backed by Whisper.
   version: 0.1.0-dev
 spec:
@@ -11,7 +12,6 @@ spec:
   mode: local
   homepage: https://github.com/nupi-ai/module-nupi-whisper-local-stt
   compatibility:
-    # Placeholder until Nupi publishes semver-tagged releases.
     nupi: ">=0.0.0-dev"
   entrypoint:
     command: ./module-nupi-whisper-local-stt
