@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/adapterinfo"
 )
 
 // StubEngine produces deterministic transcripts without invoking Whisper.
@@ -23,7 +23,7 @@ func NewStubEngine(logger *slog.Logger, modelVariant string) *StubEngine {
 	return &StubEngine{
 		log: logger.With(
 			"component", "engine.stub",
-			"module", moduleinfo.Info.Slug,
+			"adapter", adapterinfo.Info.Slug,
 			"model_variant", modelVariant,
 		),
 		modelVariant: modelVariant,

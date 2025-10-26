@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/models"
 )
 
 func TestNewUsesStubWhenForced(t *testing.T) {

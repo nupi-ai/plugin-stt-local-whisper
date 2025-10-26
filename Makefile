@@ -1,8 +1,8 @@
 .PHONY: all build build-native dist dist-native test test-native native-lib clean
 
-# === Module identity ===
-MODULE_NAME ?= $(shell go list -m)
-MODULE_BINARY ?= $(notdir $(MODULE_NAME))
+# === Adapter identity ===
+ADAPTER_NAME ?= $(shell go list -m)
+ADAPTER_BINARY ?= $(notdir $(ADAPTER_NAME))
 NATIVE_TAG := whispercpp
 NATIVE_DIR := third_party/whisper.cpp
 
@@ -21,14 +21,15 @@ build:
 build-native: native-lib
 	CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go build ./...
 
+
 dist: build
 	cmake -E make_directory dist
-	go build -o dist/$(MODULE_BINARY) ./cmd/adapter
+	go build -o dist/$(ADAPTER_BINARY) ./cmd/adapter
 
 dist-native: native-lib
 	cmake -E make_directory dist
 	DYLD_LIBRARY_PATH=$(NATIVE_LIB_DIR) LD_LIBRARY_PATH=$(NATIVE_LIB_DIR) \
-		CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go build -o dist/$(MODULE_BINARY) ./cmd/adapter
+		CGO_ENABLED=1 GOFLAGS="-tags=$(NATIVE_TAG)" go build -o dist/$(ADAPTER_BINARY) ./cmd/adapter
 
 test:
 	GOCACHE=$(PWD)/.gocache go test -race ./...

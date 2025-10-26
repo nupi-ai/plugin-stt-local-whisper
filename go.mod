@@ -1,4 +1,4 @@
-module github.com/nupi-ai/module-nupi-whisper-local-stt
+module github.com/nupi-ai/plugin-stt-local-whisper
 
 go 1.24.0
 

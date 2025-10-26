@@ -7,8 +7,8 @@ import (
 
 	"log/slog"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/models"
 )
 
 // ErrNativeEngineUnavailable indicates that a real native backend is not yet wired in.

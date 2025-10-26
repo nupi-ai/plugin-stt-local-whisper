@@ -16,10 +16,10 @@ import (
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/engine"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/server"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/telemetry"
 )
 
 const bufSize = 1024 * 1024

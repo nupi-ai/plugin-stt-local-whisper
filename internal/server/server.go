@@ -7,10 +7,10 @@ import (
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/adapterinfo"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/engine"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/telemetry"
 )
 
 // Server implements the SpeechToTextService and provides stubbed transcripts.
@@ -147,7 +147,7 @@ func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptio
 			Text:       res.Text,
 			Confidence: res.Confidence,
 			Final:      res.Final,
-			Metadata:   moduleinfo.TranscriptMetadata(s.cfg.ModelVariant, s.cfg.Language),
+			Metadata:   adapterinfo.TranscriptMetadata(s.cfg.ModelVariant, s.cfg.Language),
 		}
 		if err := stream.Send(transcript); err != nil {
 			s.log.Error("failed to send transcript", "error", err)

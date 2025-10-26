@@ -26,7 +26,7 @@ func (l Loader) Load() (Config, error) {
 		DataDir:    DefaultDataDir,
 	}
 
-	if raw, ok := l.Lookup("NUPI_MODULE_CONFIG"); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := l.Lookup("NUPI_ADAPTER_CONFIG"); ok && strings.TrimSpace(raw) != "" {
 		if err := applyJSON(raw, &cfg); err != nil {
 			return Config{}, err
 		}
@@ -36,9 +36,9 @@ func (l Loader) Load() (Config, error) {
 	overrideString(l.Lookup, "NUPI_LOG_LEVEL", &cfg.LogLevel)
 	overrideString(l.Lookup, "NUPI_MODEL_VARIANT", &cfg.ModelVariant)
 	overrideString(l.Lookup, "NUPI_LANGUAGE_HINT", &cfg.Language)
-	overrideString(l.Lookup, "NUPI_MODULE_DATA_DIR", &cfg.DataDir)
+	overrideString(l.Lookup, "NUPI_ADAPTER_DATA_DIR", &cfg.DataDir)
 	overrideString(l.Lookup, "NUPI_MODEL_PATH", &cfg.ModelPath)
-	overrideBool(l.Lookup, "NUPI_MODULE_USE_STUB_ENGINE", &cfg.UseStubEngine)
+	overrideBool(l.Lookup, "NUPI_ADAPTER_USE_STUB_ENGINE", &cfg.UseStubEngine)
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -58,7 +58,7 @@ func applyJSON(raw string, cfg *Config) error {
 	}
 	var payload jsonConfig
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return fmt.Errorf("config: decode NUPI_MODULE_CONFIG: %w", err)
+		return fmt.Errorf("config: decode NUPI_ADAPTER_CONFIG: %w", err)
 	}
 	if payload.ListenAddr != "" {
 		cfg.ListenAddr = payload.ListenAddr

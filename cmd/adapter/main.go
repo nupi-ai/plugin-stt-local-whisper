@@ -17,12 +17,12 @@ import (
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
 
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/config"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/engine"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/models"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/moduleinfo"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/server"
-	"github.com/nupi-ai/module-nupi-whisper-local-stt/internal/telemetry"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/adapterinfo"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/engine"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/models"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/server"
+	"github.com/nupi-ai/plugin-stt-local-whisper/internal/telemetry"
 )
 
 func main() {
@@ -37,8 +37,8 @@ func main() {
 
 	logger := newLogger(cfg.LogLevel)
 	logger.Info("starting adapter",
-		"module", moduleinfo.Info.Name,
-		"module_slug", moduleinfo.Info.Slug,
+		"adapter", adapterinfo.Info.Name,
+		"adapter_slug", adapterinfo.Info.Slug,
 		"listen_addr", cfg.ListenAddr,
 		"model_variant", cfg.ModelVariant,
 		"language", cfg.Language,

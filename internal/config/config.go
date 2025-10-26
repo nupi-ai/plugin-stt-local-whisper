@@ -12,7 +12,7 @@ const (
 )
 
 // Config captures bootstrap configuration extracted from environment variables
-// or injected JSON payload (`NUPI_MODULE_CONFIG`).
+// or injected JSON payload (`NUPI_ADAPTER_CONFIG`).
 type Config struct {
 	ListenAddr    string
 	ModelVariant  string

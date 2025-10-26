@@ -8,13 +8,13 @@ metadata:
   description: Local speech-to-text adapter backed by Whisper.
   version: 0.1.0-dev
 spec:
-  moduleType: stt
+  slot: stt
   mode: local
-  homepage: https://github.com/nupi-ai/module-nupi-whisper-local-stt
+  homepage: https://github.com/nupi-ai/plugin-stt-local-whisper
   compatibility:
     nupi: ">=0.0.0-dev"
   entrypoint:
-    command: ./module-nupi-whisper-local-stt
+    command: ./plugin-stt-local-whisper
     args: []
     transport: grpc
     listenEnv: NUPI_ADAPTER_LISTEN_ADDR
@@ -33,7 +33,7 @@ spec:
       description: Optional absolute path to a GGUF model; overrides variant-based lookup.
   assets:
     models:
-      cacheDirEnv: NUPI_MODULE_DATA_DIR
+      cacheDirEnv: NUPI_ADAPTER_DATA_DIR
   telemetry:
     stdout: true
     stderr: true

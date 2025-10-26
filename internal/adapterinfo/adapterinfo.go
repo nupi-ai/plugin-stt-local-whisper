@@ -1,6 +1,6 @@
-package moduleinfo
+package adapterinfo
 
-// Metadata captures static identifiers for the module. Centralising the values
+// Metadata captures static identifiers for the adapter. Centralising the values
 // makes it easy to clone this repository for new adapters.
 type Metadata struct {
 	Name        string
@@ -10,13 +10,13 @@ type Metadata struct {
 	GeneratorID string
 }
 
-// Info describes the current module.
+// Info describes the current adapter.
 var Info = Metadata{
 	Name:        "Nupi Whisper Local STT",
-	BinaryName:  "module-nupi-whisper-local-stt",
-	Slug:        "nupi-whisper-local-stt",
+	BinaryName:  "plugin-stt-local-whisper",
+	Slug:        "stt-local-whisper",
 	Description: "Local speech-to-text adapter backed by Whisper.",
-	GeneratorID: "nupi-whisper-local-stt",
+	GeneratorID: "stt-local-whisper",
 }
 
 // TranscriptMetadata produces the standard metadata payload attached
