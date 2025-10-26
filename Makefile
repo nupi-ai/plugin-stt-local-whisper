@@ -2,7 +2,7 @@
 
 # === Adapter identity ===
 ADAPTER_NAME ?= $(shell go list -m)
-ADAPTER_BINARY ?= $(notdir $(ADAPTER_NAME))
+ADAPTER_BINARY ?= stt-local-whisper
 NATIVE_TAG := whispercpp
 NATIVE_DIR := third_party/whisper.cpp
 

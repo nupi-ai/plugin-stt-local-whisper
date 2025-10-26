@@ -13,7 +13,7 @@ type Metadata struct {
 // Info describes the current adapter.
 var Info = Metadata{
 	Name:        "Nupi Whisper Local STT",
-	BinaryName:  "plugin-stt-local-whisper",
+	BinaryName:  "stt-local-whisper",
 	Slug:        "stt-local-whisper",
 	Description: "Local speech-to-text adapter backed by Whisper.",
 	GeneratorID: "stt-local-whisper",

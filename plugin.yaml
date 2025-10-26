@@ -14,7 +14,7 @@ spec:
   compatibility:
     nupi: ">=0.0.0-dev"
   entrypoint:
-    command: ./plugin-stt-local-whisper
+    command: ./stt-local-whisper
     args: []
     transport: grpc
     listenEnv: NUPI_ADAPTER_LISTEN_ADDR
