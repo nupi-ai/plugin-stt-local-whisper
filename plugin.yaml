@@ -16,7 +16,7 @@ spec:
   entrypoint:
     command: ./stt-local-whisper
     args: []
-    transport: grpc
+    transport: process
     listenEnv: NUPI_ADAPTER_LISTEN_ADDR
   options:
     model_variant:
