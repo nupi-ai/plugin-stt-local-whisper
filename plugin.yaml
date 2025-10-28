@@ -18,6 +18,7 @@ spec:
     args: []
     transport: process
     listenEnv: NUPI_ADAPTER_LISTEN_ADDR
+    readyTimeout: 30s
   options:
     model_variant:
       type: enum
