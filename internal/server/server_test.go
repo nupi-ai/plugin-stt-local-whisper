@@ -148,3 +148,101 @@ func TestStreamTranscriptionStub(t *testing.T) {
 		t.Fatalf("unexpected TotalFinalTranscripts: %d", snapshot.TotalFinalTranscripts)
 	}
 }
+
+func TestStreamTranscriptionFlushOnCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	lis := bufconn.Listen(bufSize)
+	defer lis.Close()
+
+	grpcServer := grpc.NewServer()
+	t.Cleanup(grpcServer.Stop)
+
+	cfg := config.Config{
+		ListenAddr:   "bufconn",
+		ModelVariant: "small",
+		Language:     "pl",
+		LogLevel:     "debug",
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	eng := engine.NewStubEngine(logger, cfg.ModelVariant)
+	recorder := telemetry.NewRecorder(logger)
+	napv1.RegisterSpeechToTextServiceServer(grpcServer, server.New(cfg, logger, eng, recorder))
+
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil &&
+			!errors.Is(err, grpc.ErrServerStopped) &&
+			!errors.Is(err, net.ErrClosed) &&
+			err.Error() != "closed" {
+			t.Errorf("Serve() error: %v", err)
+		}
+	}()
+
+	conn, err := grpc.DialContext(ctx, "bufconn",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("DialContext error: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	client := napv1.NewSpeechToTextServiceClient(conn)
+	stream, err := client.StreamTranscription(ctx)
+	if err != nil {
+		t.Fatalf("StreamTranscription error: %v", err)
+	}
+
+	if err := stream.Send(&napv1.StreamTranscriptionRequest{
+		SessionId: "session-42",
+		StreamId:  "mic",
+		Format: &napv1.AudioFormat{
+			Encoding:   "pcm_s16le",
+			SampleRate: 16000,
+			Channels:   1,
+		},
+	}); err != nil {
+		t.Fatalf("Send init error: %v", err)
+	}
+
+	if err := stream.Send(&napv1.StreamTranscriptionRequest{
+		SessionId: "session-42",
+		StreamId:  "mic",
+		Segment: &napv1.Segment{
+			Sequence: 1,
+			Audio:    []byte("abcd"),
+		},
+	}); err != nil {
+		t.Fatalf("Send segment error: %v", err)
+	}
+
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("CloseSend error: %v", err)
+	}
+
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv first transcript: %v", err)
+	}
+	if first.GetFinal() {
+		t.Fatalf("expected non-final transcript, got final: %v", first)
+	}
+
+	final, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv final transcript: %v", err)
+	}
+	if !final.GetFinal() {
+		t.Fatalf("expected final transcript")
+	}
+	if final.GetText() != "[stub:small] total bytes 4" {
+		t.Fatalf("unexpected final text: %q", final.GetText())
+	}
+
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("expected EOF after final transcript, got %v", err)
+	}
+}

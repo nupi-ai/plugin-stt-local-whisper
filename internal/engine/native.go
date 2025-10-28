@@ -20,13 +20,24 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/cgo"
 	"strings"
 	"sync"
 	"unsafe"
 )
 
-const maxAudioBytes = 10 * 1024 * 1024 // safety cap per stream
+const (
+	whisperSampleRate  = 16000
+	bytesPerSample     = 2
+	windowSeconds      = 30    // sliding window similar to whisper-stream
+	minFrameMillis     = 3000  // batch process every ~3s (like stream.cpp step_ms)
+	overlapMillis      = 200   // overlap between batches for continuity
+	maxAudioBytes      = whisperSampleRate * bytesPerSample * windowSeconds
+	minWhisperBytes    = whisperSampleRate * bytesPerSample * minFrameMillis / 1000
+	overlapBytes       = whisperSampleRate * bytesPerSample * overlapMillis / 1000
+	audioTrimChunkSize = whisperSampleRate * bytesPerSample // trim in ~1 s chunks
+)
 
 func NativeAvailable() bool { return true }
 
@@ -34,11 +45,14 @@ type NativeEngine struct {
 	mu      sync.Mutex
 	inferMu sync.Mutex
 
-	ctx      *C.struct_whisper_context
-	audio    []byte
-	lastText string
-	language string
-	lastConf float32
+	ctx          *C.struct_whisper_context
+	audio        []byte
+	lastSegment  []byte // For overlapping between batches (like pcmf32_old in stream.cpp)
+	promptTokens []C.whisper_token
+	lastText     string
+	language     string
+	lastConf     float32
+	defaultLang  string
 }
 
 func NewNativeEngine(modelPath string) (Engine, error) {
@@ -54,6 +68,7 @@ func NewNativeEngine(modelPath string) (Engine, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("whisper: failed to initialise context for %s", modelPath)
 	}
+
 	return &NativeEngine{
 		ctx: ctx,
 	}, nil
@@ -67,26 +82,80 @@ func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts
 		return nil, nil
 	}
 
-	lang := normaliseLanguage(opts.Language, e.language)
+	var (
+		prevLang string
+		forced   string
+	)
+	e.mu.Lock()
+	prevLang = e.language
+	forced = e.defaultLang
+	e.mu.Unlock()
+
+	lang := normaliseLanguage(opts.Language, prevLang, forced)
 
 	e.mu.Lock()
-	if len(e.audio)+len(audio) > maxAudioBytes {
-		e.mu.Unlock()
-		return nil, fmt.Errorf("whisper: audio buffer overflow (max %d bytes)", maxAudioBytes)
-	}
+	// Accumulate new audio
 	e.audio = append(e.audio, audio...)
-	buffer := append([]byte(nil), e.audio...)
+
+	// Check if we have enough audio to process (batch processing like stream.cpp)
+	if len(e.audio) < minWhisperBytes {
+		e.mu.Unlock()
+		return nil, nil
+	}
+
+	// Create processing buffer: overlap from lastSegment + new audio
+	var buffer []byte
+	if len(e.lastSegment) > 0 {
+		// Take overlap from the end of lastSegment
+		overlapStart := len(e.lastSegment) - overlapBytes
+		if overlapStart < 0 {
+			overlapStart = 0
+		}
+		overlap := e.lastSegment[overlapStart:]
+		buffer = make([]byte, 0, len(overlap)+len(e.audio))
+		buffer = append(buffer, overlap...)
+		buffer = append(buffer, e.audio...)
+	} else {
+		buffer = append([]byte(nil), e.audio...)
+	}
+
+	// Trim if buffer exceeds maximum window size
+	if len(buffer) > maxAudioBytes {
+		buffer = buffer[len(buffer)-maxAudioBytes:]
+	}
+
 	previous := e.lastText
 	e.mu.Unlock()
 
 	agg, err := e.runInference(ctx, buffer, lang)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, nil
+		}
+		slog.Warn("native inference failed",
+			"err", err,
+			"ctx_err", ctx.Err(),
+			"audio_len", len(buffer),
+			"language", lang,
+		)
 		return nil, err
+	}
+	if agg.Text != "" {
+		slog.Info("native inference aggregate",
+			"stage", "segment",
+			"audio_len", len(buffer),
+			"language", lang,
+			"text", agg.Text,
+			"confidence", agg.Confidence,
+		)
 	}
 
 	e.mu.Lock()
 	e.language = lang
-	e.audio = buffer
+	// CRITICAL: Reset audio buffer after processing (batch processing)
+	e.audio = nil
+	// Save processed buffer as lastSegment for next batch's overlap
+	e.lastSegment = buffer
 	delta := diffTranscript(previous, agg.Text)
 	e.lastText = agg.Text
 	e.lastConf = agg.Confidence
@@ -110,12 +179,18 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 		return nil, err
 	}
 
-	lang := normaliseLanguage(opts.Language, e.language)
-
+	var (
+		prevLang string
+		forced   string
+	)
 	e.mu.Lock()
+	prevLang = e.language
+	forced = e.defaultLang
 	buffer := append([]byte(nil), e.audio...)
 	previous := e.lastText
 	e.mu.Unlock()
+
+	lang := normaliseLanguage(opts.Language, prevLang, forced)
 
 	var (
 		combined   string
@@ -134,10 +209,28 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 		confidence = e.lastConf
 	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, nil
+		}
+		slog.Warn("native flush inference failed",
+			"err", err,
+			"ctx_err", ctx.Err(),
+			"audio_len", len(buffer),
+			"language", lang,
+		)
 		e.mu.Lock()
 		e.resetLocked()
 		e.mu.Unlock()
 		return nil, err
+	}
+	if combined != "" {
+		slog.Info("native inference aggregate",
+			"stage", "flush",
+			"audio_len", len(buffer),
+			"language", lang,
+			"text", combined,
+			"confidence", confidence,
+		)
 	}
 
 	finalText := strings.TrimSpace(combined)
@@ -201,7 +294,7 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 	params.print_realtime = C.bool(false)
 	params.print_timestamps = C.bool(false)
 	params.translate = C.bool(false)
-	params.no_context = C.bool(true)
+	params.no_context = C.bool(false)
 	params.single_segment = C.bool(false)
 
 	lang := strings.TrimSpace(language)
@@ -220,6 +313,12 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 	params.abort_callback = (C.ggml_abort_callback)(C.whisperGoAbort)
 	params.abort_callback_user_data = unsafe.Pointer(&handle)
 
+	// Pass prompt tokens from previous segments to maintain context
+	if len(e.promptTokens) > 0 {
+		params.prompt_tokens = &e.promptTokens[0]
+		params.prompt_n_tokens = C.int(len(e.promptTokens))
+	}
+
 	if ret := C.whisper_full_with_state(e.ctx, state, params, cSamples, nSamples); ret != 0 {
 		if err := ctx.Err(); err != nil {
 			return transcriptAggregate{}, err
@@ -227,14 +326,59 @@ func (e *NativeEngine) runInference(ctx context.Context, audio []byte, language 
 		return transcriptAggregate{}, fmt.Errorf("whisper: inference failed with code %d", int(ret))
 	}
 
+	// Collect tokens from this inference for next call's context
+	e.collectPromptTokens(state)
+
 	return collectTranscriptAggregate(state), nil
+}
+
+// collectPromptTokens gathers tokens from the current inference to use as context for the next call.
+// This follows the approach from whisper-stream example in whisper.cpp repository.
+func (e *NativeEngine) collectPromptTokens(state *C.struct_whisper_state) {
+	const maxPromptTokens = 224 // whisper_n_text_ctx()/2, typically 448/2 = 224
+
+	if state == nil {
+		return
+	}
+
+	nSegments := int(C.whisper_full_n_segments_from_state(state))
+	if nSegments == 0 {
+		return
+	}
+
+	// Collect all tokens from all segments
+	var tokens []C.whisper_token
+	for i := 0; i < nSegments; i++ {
+		nTokens := int(C.whisper_full_n_tokens_from_state(state, C.int(i)))
+		for j := 0; j < nTokens; j++ {
+			tokenID := C.whisper_full_get_token_id_from_state(state, C.int(i), C.int(j))
+			tokens = append(tokens, tokenID)
+		}
+	}
+
+	// Keep only the last maxPromptTokens tokens
+	if len(tokens) > maxPromptTokens {
+		tokens = tokens[len(tokens)-maxPromptTokens:]
+	}
+
+	e.promptTokens = tokens
 }
 
 func (e *NativeEngine) resetLocked() {
 	e.audio = nil
+	e.lastSegment = nil
+	e.promptTokens = nil
 	e.lastText = ""
 	e.language = ""
 	e.lastConf = 0
+}
+
+// SetDefaultLanguage configures the language hint to use when callers request auto detection.
+func (e *NativeEngine) SetDefaultLanguage(lang string) {
+	trimmed := preferLanguage(lang)
+	e.mu.Lock()
+	e.defaultLang = trimmed
+	e.mu.Unlock()
 }
 
 func pcmBytesToFloat32(buf []byte) []float32 {
@@ -298,8 +442,12 @@ func collectTranscriptAggregate(state *C.struct_whisper_state) transcriptAggrega
 	if tokenSamples > 0 {
 		confidence = float32(sumProb / float64(tokenSamples))
 	}
+	text := strings.TrimSpace(builder.String())
+	if strings.EqualFold(text, "[BLANK_AUDIO]") {
+		text = ""
+	}
 	return transcriptAggregate{
-		Text:       strings.TrimSpace(builder.String()),
+		Text:       text,
 		Confidence: confidence,
 	}
 }

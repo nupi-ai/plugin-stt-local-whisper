@@ -29,12 +29,32 @@ func diffTranscript(previous, current string) string {
 	return strings.TrimLeft(delta, " \t\r\n")
 }
 
-func normaliseLanguage(candidate, fallback string) string {
-	if trimmed := strings.TrimSpace(candidate); trimmed != "" {
-		return trimmed
+func normaliseLanguage(candidate, previous, forced string) string {
+	if lang := preferLanguage(candidate); lang != "" {
+		return lang
 	}
-	if trimmed := strings.TrimSpace(fallback); trimmed != "" {
+	if lang := preferLanguage(previous); lang != "" {
+		return lang
+	}
+	if lang := preferLanguage(forced); lang != "" {
+		return lang
+	}
+	if strings.TrimSpace(candidate) != "" {
+		return "auto"
+	}
+	if strings.TrimSpace(previous) != "" {
+		return "auto"
+	}
+	if trimmed := strings.TrimSpace(forced); trimmed != "" {
 		return trimmed
 	}
 	return "auto"
+}
+
+func preferLanguage(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.EqualFold(trimmed, "auto") {
+		return ""
+	}
+	return strings.ToLower(trimmed)
 }

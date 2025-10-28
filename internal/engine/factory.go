@@ -37,6 +37,10 @@ type engineOptions struct {
 	ensure   models.EnsureOptions
 }
 
+type languageHintSetter interface {
+	SetDefaultLanguage(string)
+}
+
 func newEngineWithOptions(cfg config.Config, manager *models.Manager, logger *slog.Logger, opts engineOptions) (Engine, string, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -70,16 +74,46 @@ func newEngineWithOptions(cfg config.Config, manager *models.Manager, logger *sl
 		return NewStubEngine(logger, cfg.ModelVariant), "", err
 	}
 
+	var forcedLang string
+	if variant, ok := opts.manifest.Get(cfg.ModelVariant); ok {
+		if lang, ok := variant.PrimaryLanguage(); ok {
+			forcedLang = lang
+		}
+	}
+	explicitLang := strings.TrimSpace(cfg.Language)
+	applyForcedLang := forcedLang != "" && (explicitLang == "" || strings.EqualFold(explicitLang, "auto"))
+
 	if NativeAvailable() {
 		native, nativeErr := NewNativeEngine(modelPath)
 		if nativeErr != nil {
 			logger.Error("native engine initialisation failed; using stub", "error", nativeErr, "model_path", modelPath)
 			return NewStubEngine(logger, cfg.ModelVariant), modelPath, nativeErr
 		}
+		if applyForcedLang {
+			if setter, ok := native.(languageHintSetter); ok {
+				setter.SetDefaultLanguage(forcedLang)
+				logger.Info("adjusted language hint to match model capabilities",
+					"language", forcedLang,
+					"model_variant", cfg.ModelVariant,
+				)
+			} else {
+				logger.Warn("language hint override requested but engine does not support it",
+					"language", forcedLang,
+					"model_variant", cfg.ModelVariant,
+				)
+			}
+		}
 		logger.Info("native engine ready", "model_path", modelPath)
 		return native, modelPath, nil
 	}
 
 	logger.Warn("native backend disabled at build time; using stub engine", "model_path", modelPath)
-	return NewStubEngine(logger, cfg.ModelVariant), modelPath, ErrNativeEngineUnavailable
+	stub := NewStubEngine(logger, cfg.ModelVariant)
+	var engine Engine = stub
+	if applyForcedLang {
+		if setter, ok := engine.(languageHintSetter); ok {
+			setter.SetDefaultLanguage(forcedLang)
+		}
+	}
+	return engine, modelPath, ErrNativeEngineUnavailable
 }

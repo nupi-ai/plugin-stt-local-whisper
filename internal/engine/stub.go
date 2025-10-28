@@ -68,3 +68,6 @@ func (e *StubEngine) Flush(ctx context.Context, opts Options) ([]Result, error) 
 		},
 	}, nil
 }
+
+// SetDefaultLanguage satisfies the languageHintSetter interface; the stub ignores the hint.
+func (e *StubEngine) SetDefaultLanguage(string) {}

@@ -96,6 +96,49 @@ func TestNativeEngineTranscribesFixture(t *testing.T) {
 	}
 }
 
+func TestNativeEngineAutoLanguageFallsBack(t *testing.T) {
+	if !NativeAvailable() {
+		t.Skip("native backend not available")
+	}
+
+	engine := openTestNativeEngine(t)
+	engine.SetDefaultLanguage("en")
+	audio, _ := loadTestAudio(t)
+	ctx := context.Background()
+
+	const chunkSize = 9600
+	var final string
+
+	for seq, offset := uint64(0), 0; offset < len(audio); seq++ {
+		end := offset + chunkSize
+		if end > len(audio) {
+			end = len(audio)
+		}
+		results, err := engine.TranscribeSegment(ctx, audio[offset:end], Options{Language: "auto", Sequence: seq})
+		if err != nil {
+			t.Fatalf("TranscribeSegment(auto) returned error: %v", err)
+		}
+		for _, res := range results {
+			if strings.TrimSpace(res.Text) != "" {
+				final = res.Text
+			}
+		}
+		offset = end
+	}
+
+	results, err := engine.Flush(ctx, Options{Language: "auto"})
+	if err != nil {
+		t.Fatalf("Flush(auto) returned error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected final transcript")
+	}
+	final = strings.TrimSpace(results[len(results)-1].Text)
+	if final == "" {
+		t.Fatal("final transcript empty with auto language")
+	}
+}
+
 func TestNativeEngineTranscribeSegmentRespectsContextCancellation(t *testing.T) {
 	if !NativeAvailable() {
 		t.Skip("native backend not available")
@@ -115,15 +158,20 @@ func TestNativeEngineTranscribeSegmentRespectsContextCancellation(t *testing.T) 
 	}
 }
 
-func TestNativeEngineRejectsOversizedAudio(t *testing.T) {
+func TestNativeEngineTrimsOversizedAudio(t *testing.T) {
 	if !NativeAvailable() {
 		t.Skip("native backend not available")
 	}
 
 	engine := openTestNativeEngine(t)
-	big := make([]byte, maxAudioBytes+1)
-	if _, err := engine.TranscribeSegment(context.Background(), big, Options{}); err == nil || !strings.Contains(err.Error(), "audio buffer overflow") {
-		t.Fatalf("expected audio buffer overflow error, got %v", err)
+	big := make([]byte, maxAudioBytes+whisperSampleRate*bytesPerSample)
+	if _, err := engine.TranscribeSegment(context.Background(), big, Options{}); err != nil {
+		t.Fatalf("unexpected error for oversized audio: %v", err)
+	}
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if len(engine.audio) != maxAudioBytes {
+		t.Fatalf("audio buffer length = %d, want %d", len(engine.audio), maxAudioBytes)
 	}
 }
 

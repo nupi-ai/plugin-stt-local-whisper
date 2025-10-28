@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"time"
@@ -53,6 +55,9 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 	var (
 		initLogged    bool
 		streamMetrics *telemetry.StreamMetrics
+		sessionID     string
+		streamID      string
+		lastSequence  uint64
 	)
 	ctx := stream.Context()
 	defer func() {
@@ -64,7 +69,18 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 	for {
 		req, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				if streamMetrics != nil {
+					flushCtx := ctx
+					if errors.Is(err, context.Canceled) {
+						var cancel context.CancelFunc
+						flushCtx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+						defer cancel()
+					}
+					if flushErr := s.emitFlush(flushCtx, stream, sessionID, streamID, lastSequence, streamMetrics, "stream closed"); flushErr != nil {
+						return flushErr
+					}
+				}
 				return nil
 			}
 			s.log.Error("failed to receive request", "error", err)
@@ -81,6 +97,8 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 				"stream_id", req.GetStreamId(),
 				"metadata", req.GetMetadata(),
 			)
+			sessionID = req.GetSessionId()
+			streamID = req.GetStreamId()
 			initLogged = true
 		}
 
@@ -88,9 +106,16 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		var sequence uint64
 		if segment != nil {
 			sequence = segment.GetSequence()
+			lastSequence = sequence
 		}
 
 		if segment != nil && len(segment.GetAudio()) > 0 {
+			logEntry := s.log.With(
+				"session_id", req.GetSessionId(),
+				"stream_id", req.GetStreamId(),
+				"sequence", sequence,
+				"final_requested", req.GetFlush() || segment.GetLast(),
+			)
 			if streamMetrics != nil {
 				streamMetrics.RecordSegment(sequence, len(segment.GetAudio()), req.GetFlush() || segment.GetLast())
 			}
@@ -101,11 +126,19 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 				Sequence: sequence,
 			})
 			if err != nil {
-				s.log.Error("engine segment failure", "error", err)
+				logEntry.Error("engine segment failure", "error", err, "context_err", ctx.Err())
 				return err
 			}
 			if streamMetrics != nil {
 				streamMetrics.RecordInferenceDuration(time.Since(start))
+			}
+			for idx, res := range results {
+				logEntry.Info("engine segment result",
+					"index", idx,
+					"text", res.Text,
+					"confidence", res.Confidence,
+					"final", res.Final,
+				)
 			}
 			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
 				return err
@@ -113,28 +146,52 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		}
 
 		if req.GetFlush() {
-			if streamMetrics != nil {
-				streamMetrics.RecordFlush()
-			}
-			start := time.Now()
-			results, err := s.engine.Flush(ctx, engine.Options{Language: s.cfg.Language, Final: true})
-			if err != nil {
-				s.log.Error("engine flush failure", "error", err)
+			if err := s.emitFlush(ctx, stream, req.GetSessionId(), req.GetStreamId(), sequence, streamMetrics, "stream flushed"); err != nil {
 				return err
 			}
-			if streamMetrics != nil {
-				streamMetrics.RecordInferenceDuration(time.Since(start))
-			}
-			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
-				return err
-			}
-			s.log.Info("stream flushed",
-				"session_id", req.GetSessionId(),
-				"stream_id", req.GetStreamId(),
-			)
 			return nil
 		}
 	}
+}
+
+func (s *Server) emitFlush(
+	ctx context.Context,
+	stream napv1.SpeechToTextService_StreamTranscriptionServer,
+	sessionID, streamID string,
+	sequence uint64,
+	metrics *telemetry.StreamMetrics,
+	reason string,
+) error {
+	logEntry := s.log.With(
+		"session_id", sessionID,
+		"stream_id", streamID,
+		"sequence", sequence,
+	)
+	if metrics != nil {
+		metrics.RecordFlush()
+	}
+	start := time.Now()
+	results, err := s.engine.Flush(ctx, engine.Options{Language: s.cfg.Language, Final: true})
+	if err != nil {
+		logEntry.Error("engine flush failure", "error", err, "context_err", ctx.Err())
+		return err
+	}
+	if metrics != nil {
+		metrics.RecordInferenceDuration(time.Since(start))
+	}
+	for idx, res := range results {
+		logEntry.Info("engine flush result",
+			"index", idx,
+			"text", res.Text,
+			"confidence", res.Confidence,
+			"final", res.Final,
+		)
+	}
+	if err := s.sendResults(stream, sequence, results, metrics); err != nil {
+		return err
+	}
+	logEntry.Info(reason)
+	return nil
 }
 
 func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []engine.Result, metrics *telemetry.StreamMetrics) error {

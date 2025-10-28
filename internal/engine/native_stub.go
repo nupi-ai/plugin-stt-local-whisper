@@ -24,3 +24,5 @@ func (e *NativeEngine) Flush(ctx context.Context, opts Options) ([]Result, error
 }
 
 func (e *NativeEngine) Close() error { return nil }
+
+func (e *NativeEngine) SetDefaultLanguage(string) {}

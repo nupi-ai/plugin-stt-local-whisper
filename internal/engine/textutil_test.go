@@ -66,19 +66,21 @@ func TestNormaliseLanguage(t *testing.T) {
 	tests := []struct {
 		name      string
 		candidate string
-		fallback  string
+		previous  string
+		forced    string
 		want      string
 	}{
-		{"candidate wins", "en", "pl", "en"},
-		{"fallback used", "", "pl", "pl"},
-		{"defaults to auto", "  ", " ", "auto"},
+		{"candidate wins", "pl", "en", "de", "pl"},
+		{"previous wins", "auto", "en", "de", "en"},
+		{"forced used", "auto", "auto", "en", "en"},
+		{"defaults to auto", "  ", " ", "", "auto"},
 	}
 
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if got := normaliseLanguage(tc.candidate, tc.fallback); got != tc.want {
-				t.Fatalf("normaliseLanguage(%q, %q) = %q, want %q", tc.candidate, tc.fallback, got, tc.want)
+			if got := normaliseLanguage(tc.candidate, tc.previous, tc.forced); got != tc.want {
+				t.Fatalf("normaliseLanguage(%q, %q, %q) = %q, want %q", tc.candidate, tc.previous, tc.forced, got, tc.want)
 			}
 		})
 	}
