@@ -28,15 +28,15 @@ import (
 )
 
 const (
-	whisperSampleRate  = 16000
-	bytesPerSample     = 2
-	windowSeconds      = 30    // sliding window similar to whisper-stream
-	minFrameMillis     = 3000  // batch process every ~3s (like stream.cpp step_ms)
-	overlapMillis      = 200   // overlap between batches for continuity
-	maxAudioBytes      = whisperSampleRate * bytesPerSample * windowSeconds
-	minWhisperBytes    = whisperSampleRate * bytesPerSample * minFrameMillis / 1000
-	overlapBytes       = whisperSampleRate * bytesPerSample * overlapMillis / 1000
-	audioTrimChunkSize = whisperSampleRate * bytesPerSample // trim in ~1 s chunks
+	whisperSampleRate   = 16000
+	bytesPerSample      = 2
+	windowSeconds       = 30    // maximum window for very long audio
+	targetWindowSeconds = 10    // target window size matching stream.cpp length_ms
+	minFrameMillis      = 3000  // batch process every ~3s (like stream.cpp step_ms)
+	maxAudioBytes       = whisperSampleRate * bytesPerSample * windowSeconds
+	targetWindowBytes   = whisperSampleRate * bytesPerSample * targetWindowSeconds
+	minWhisperBytes     = whisperSampleRate * bytesPerSample * minFrameMillis / 1000
+	audioTrimChunkSize  = whisperSampleRate * bytesPerSample // trim in ~1 s chunks
 )
 
 func NativeAvailable() bool { return true }
@@ -104,13 +104,20 @@ func (e *NativeEngine) TranscribeSegment(ctx context.Context, audio []byte, opts
 	}
 
 	// Create processing buffer: overlap from lastSegment + new audio
+	// Following stream.cpp approach: use enough old audio to reach target window size (10s)
 	var buffer []byte
 	if len(e.lastSegment) > 0 {
-		// Take overlap from the end of lastSegment
-		overlapStart := len(e.lastSegment) - overlapBytes
-		if overlapStart < 0 {
-			overlapStart = 0
+		// Calculate how much old audio we need to reach targetWindowBytes
+		// This matches stream.cpp: n_samples_take = min(old.size, max(0, keep + len - new))
+		overlapBytesNeeded := targetWindowBytes - len(e.audio)
+		if overlapBytesNeeded < 0 {
+			overlapBytesNeeded = 0
 		}
+		if overlapBytesNeeded > len(e.lastSegment) {
+			overlapBytesNeeded = len(e.lastSegment)
+		}
+
+		overlapStart := len(e.lastSegment) - overlapBytesNeeded
 		overlap := e.lastSegment[overlapStart:]
 		buffer = make([]byte, 0, len(overlap)+len(e.audio))
 		buffer = append(buffer, overlap...)
