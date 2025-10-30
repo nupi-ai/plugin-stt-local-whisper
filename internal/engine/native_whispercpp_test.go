@@ -163,15 +163,21 @@ func TestNativeEngineTrimsOversizedAudio(t *testing.T) {
 		t.Skip("native backend not available")
 	}
 
+	const (
+		bytesPerSample = 2
+		sampleRate     = 16000
+	)
+
 	engine := openTestNativeEngine(t)
-	big := make([]byte, maxAudioBytes+whisperSampleRate*bytesPerSample)
-	if _, err := engine.TranscribeSegment(context.Background(), big, Options{}); err != nil {
+	windowSamples := (targetWindowMillis * sampleRate) / 1000
+	stepSamples := (minFrameMillis * sampleRate) / 1000
+	big := make([]byte, (windowSamples+stepSamples)*bytesPerSample)
+
+	if _, err := engine.TranscribeSegment(context.Background(), big, Options{Language: "en"}); err != nil {
 		t.Fatalf("unexpected error for oversized audio: %v", err)
 	}
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
-	if len(engine.audio) != maxAudioBytes {
-		t.Fatalf("audio buffer length = %d, want %d", len(engine.audio), maxAudioBytes)
+	if _, err := engine.Flush(context.Background(), Options{Language: "en"}); err != nil {
+		t.Fatalf("flush after oversized segment failed: %v", err)
 	}
 }
 

@@ -36,7 +36,7 @@ test:
 
 native-lib:
 	cmake -E make_directory $(NATIVE_BUILD)
-	cmake -S $(NATIVE_DIR) -B $(NATIVE_BUILD) \
+	cmake -S $(NATIVE_DIR) -B $(NATIVE_BUILD) -Wno-dev \
 		-DCMAKE_BUILD_TYPE=Release \
 		$(NATIVE_CMAKE_FLAGS)
 	cmake --build $(NATIVE_BUILD) --target $(NATIVE_BUILD_TARGET)
