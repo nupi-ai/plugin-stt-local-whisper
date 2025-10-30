@@ -65,6 +65,9 @@ func main() {
 		"model_variant", cfg.ModelVariant,
 		"language", cfg.Language,
 		"data_dir", cfg.DataDir,
+		"use_gpu", logBoolField(cfg.UseGPU),
+		"flash_attention", logBoolField(cfg.FlashAttention),
+		"threads", logThreadsField(cfg.Threads),
 	)
 
 	recorder := telemetry.NewRecorder(logger)
@@ -193,4 +196,18 @@ func parseLevel(value string) slog.Leveler {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func logBoolField(v *bool) any {
+	if v == nil {
+		return "auto"
+	}
+	return *v
+}
+
+func logThreadsField(v *int) any {
+	if v == nil || *v <= 0 {
+		return "auto"
+	}
+	return *v
 }

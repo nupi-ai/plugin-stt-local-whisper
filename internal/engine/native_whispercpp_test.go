@@ -182,7 +182,7 @@ func TestNativeEngineTrimsOversizedAudio(t *testing.T) {
 }
 
 func TestNewNativeEngineRejectsEmptyPath(t *testing.T) {
-	if _, err := NewNativeEngine(""); err == nil {
+	if _, err := NewNativeEngine("", NativeOptions{}); err == nil {
 		t.Fatal("expected error for empty model path")
 	}
 }
@@ -192,7 +192,7 @@ func openTestNativeEngine(tb testing.TB) *NativeEngine {
 
 	modelRel := filepath.Join("testdata", "models", "ggml-base.en.bin")
 	modelPath := locateFixture(tb, modelRel, "run `go run ./cmd/tools/models/download --variant base --dir testdata`")
-	eng, err := NewNativeEngine(modelPath)
+	eng, err := NewNativeEngine(modelPath, NativeOptions{})
 	if err != nil {
 		tb.Fatalf("NewNativeEngine: %v", err)
 	}

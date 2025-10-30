@@ -8,7 +8,7 @@ import "context"
 func NativeAvailable() bool { return false }
 
 // NewNativeEngine returns an error when the native backend is not built.
-func NewNativeEngine(modelPath string) (Engine, error) {
+func NewNativeEngine(modelPath string, _ NativeOptions) (Engine, error) {
 	return nil, ErrNativeEngineUnavailable
 }
 

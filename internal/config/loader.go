@@ -39,6 +39,21 @@ func (l Loader) Load() (Config, error) {
 	overrideString(l.Lookup, "NUPI_ADAPTER_DATA_DIR", &cfg.DataDir)
 	overrideString(l.Lookup, "NUPI_MODEL_PATH", &cfg.ModelPath)
 	overrideBool(l.Lookup, "NUPI_ADAPTER_USE_STUB_ENGINE", &cfg.UseStubEngine)
+	if value, ok := l.Lookup("WHISPERCPP_USE_GPU"); ok {
+		if parsed, err := parseBool(value); err == nil {
+			assignBoolPtr(&cfg.UseGPU, parsed)
+		}
+	}
+	if value, ok := l.Lookup("WHISPERCPP_FLASH_ATTENTION"); ok {
+		if parsed, err := parseBool(value); err == nil {
+			assignBoolPtr(&cfg.FlashAttention, parsed)
+		}
+	}
+	if value, ok := l.Lookup("WHISPERCPP_THREADS"); ok {
+		if parsed, err := parseInt(value); err == nil {
+			assignIntPtr(&cfg.Threads, parsed)
+		}
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -48,13 +63,16 @@ func (l Loader) Load() (Config, error) {
 
 func applyJSON(raw string, cfg *Config) error {
 	type jsonConfig struct {
-		ListenAddr    string `json:"listen_addr"`
-		ModelVariant  string `json:"model_variant"`
-		Language      string `json:"language"`
-		LogLevel      string `json:"log_level"`
-		DataDir       string `json:"data_dir"`
-		ModelPath     string `json:"model_path"`
-		UseStubEngine *bool  `json:"use_stub_engine"`
+		ListenAddr     string `json:"listen_addr"`
+		ModelVariant   string `json:"model_variant"`
+		Language       string `json:"language"`
+		LogLevel       string `json:"log_level"`
+		DataDir        string `json:"data_dir"`
+		ModelPath      string `json:"model_path"`
+		UseStubEngine  *bool  `json:"use_stub_engine"`
+		UseGPU         *bool  `json:"use_gpu"`
+		FlashAttention *bool  `json:"flash_attention"`
+		Threads        *int   `json:"threads"`
 	}
 	var payload jsonConfig
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -81,6 +99,15 @@ func applyJSON(raw string, cfg *Config) error {
 	if payload.UseStubEngine != nil {
 		cfg.UseStubEngine = *payload.UseStubEngine
 	}
+	if payload.UseGPU != nil {
+		assignBoolPtr(&cfg.UseGPU, *payload.UseGPU)
+	}
+	if payload.FlashAttention != nil {
+		assignBoolPtr(&cfg.FlashAttention, *payload.FlashAttention)
+	}
+	if payload.Threads != nil {
+		assignIntPtr(&cfg.Threads, *payload.Threads)
+	}
 	return nil
 }
 
@@ -98,13 +125,46 @@ func overrideBool(lookup func(string) (string, bool), key string, target *bool) 
 		return
 	}
 	if value, ok := lookup(key); ok {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			return
-		}
-		parsed, err := strconv.ParseBool(trimmed)
-		if err == nil {
+		if parsed, err := parseBool(value); err == nil {
 			*target = parsed
 		}
 	}
+}
+
+func parseBool(value string) (bool, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false, fmt.Errorf("empty")
+	}
+	parsed, err := strconv.ParseBool(trimmed)
+	if err != nil {
+		return false, err
+	}
+	return parsed, nil
+}
+
+func parseInt(value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, err
+	}
+	return parsed, nil
+}
+
+func assignBoolPtr(target **bool, value bool) {
+	v := value
+	*target = &v
+}
+
+func assignIntPtr(target **int, value int) {
+	if value <= 0 {
+		*target = nil
+		return
+	}
+	v := value
+	*target = &v
 }

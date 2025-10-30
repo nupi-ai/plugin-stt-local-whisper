@@ -84,7 +84,17 @@ func newEngineWithOptions(cfg config.Config, manager *models.Manager, logger *sl
 	applyForcedLang := forcedLang != "" && (explicitLang == "" || strings.EqualFold(explicitLang, "auto"))
 
 	if NativeAvailable() {
-		native, nativeErr := NewNativeEngine(modelPath)
+		nativeOptions := NativeOptions{}
+		if cfg.UseGPU != nil {
+			nativeOptions.UseGPU = cfg.UseGPU
+		}
+		if cfg.FlashAttention != nil {
+			nativeOptions.FlashAttention = cfg.FlashAttention
+		}
+		if cfg.Threads != nil && *cfg.Threads > 0 {
+			nativeOptions.Threads = cfg.Threads
+		}
+		native, nativeErr := NewNativeEngine(modelPath, nativeOptions)
 		if nativeErr != nil {
 			logger.Error("native engine initialisation failed; using stub", "error", nativeErr, "model_path", modelPath)
 			return NewStubEngine(logger, cfg.ModelVariant), modelPath, nativeErr

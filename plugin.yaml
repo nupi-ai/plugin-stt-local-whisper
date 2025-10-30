@@ -32,6 +32,18 @@ spec:
     model_path:
       type: string
       description: Optional absolute path to a GGUF model; overrides variant-based lookup.
+    use_gpu:
+      type: boolean
+      default: true
+      description: Enables GPU acceleration when available.
+    flash_attention:
+      type: boolean
+      default: true
+      description: Uses FlashAttention kernels (GPU-only).
+    threads:
+      type: integer
+      default: 0
+      description: Number of inference threads (0 = auto-detect).
   assets:
     models:
       cacheDirEnv: NUPI_ADAPTER_DATA_DIR

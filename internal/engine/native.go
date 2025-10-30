@@ -49,27 +49,33 @@ type NativeEngine struct {
 	languageConfigured bool
 }
 
-func NewNativeEngine(modelPath string) (Engine, error) {
+func NewNativeEngine(modelPath string, opts NativeOptions) (Engine, error) {
 	if strings.TrimSpace(modelPath) == "" {
 		return nil, errors.New("whisper: model path required")
 	}
 
 	useGPU := true
-	if env := strings.TrimSpace(os.Getenv(useGPUEnv)); env != "" {
+	if opts.UseGPU != nil {
+		useGPU = *opts.UseGPU
+	} else if env := strings.TrimSpace(os.Getenv(useGPUEnv)); env != "" {
 		if parsed, err := strconv.ParseBool(env); err == nil {
 			useGPU = parsed
 		}
 	}
 
 	flashAttn := true
-	if env := strings.TrimSpace(os.Getenv(defaultFlashAttnEnv)); env != "" {
+	if opts.FlashAttention != nil {
+		flashAttn = *opts.FlashAttention
+	} else if env := strings.TrimSpace(os.Getenv(defaultFlashAttnEnv)); env != "" {
 		if parsed, err := strconv.ParseBool(env); err == nil {
 			flashAttn = parsed
 		}
 	}
 
 	threads := runtime.NumCPU()
-	if env := strings.TrimSpace(os.Getenv(threadsEnv)); env != "" {
+	if opts.Threads != nil && *opts.Threads > 0 {
+		threads = *opts.Threads
+	} else if env := strings.TrimSpace(os.Getenv(threadsEnv)); env != "" {
 		if parsed, err := strconv.Atoi(env); err == nil && parsed > 0 {
 			threads = parsed
 		}

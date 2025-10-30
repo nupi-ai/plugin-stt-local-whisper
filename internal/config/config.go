@@ -14,13 +14,16 @@ const (
 // Config captures bootstrap configuration extracted from environment variables
 // or injected JSON payload (`NUPI_ADAPTER_CONFIG`).
 type Config struct {
-	ListenAddr    string
-	ModelVariant  string
-	Language      string
-	LogLevel      string
-	DataDir       string
-	ModelPath     string
-	UseStubEngine bool
+	ListenAddr     string
+	ModelVariant   string
+	Language       string
+	LogLevel       string
+	DataDir        string
+	ModelPath      string
+	UseStubEngine  bool
+	UseGPU         *bool
+	FlashAttention *bool
+	Threads        *int
 }
 
 // Validate applies defaults and raises an error when required fields are
