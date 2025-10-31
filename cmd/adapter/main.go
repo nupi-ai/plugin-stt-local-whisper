@@ -61,6 +61,7 @@ func main() {
 	logger.Info("starting adapter",
 		"adapter", adapterinfo.Info.Name,
 		"adapter_slug", adapterinfo.Info.Slug,
+		"adapter_version", adapterinfo.Version(),
 		"listen_addr", cfg.ListenAddr,
 		"model_variant", cfg.ModelVariant,
 		"language", cfg.Language,

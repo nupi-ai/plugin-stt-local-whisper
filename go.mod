@@ -7,6 +7,7 @@ toolchain go1.24.7
 require (
 	github.com/nupi-ai/nupi v0.0.0
 	google.golang.org/grpc v1.64.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

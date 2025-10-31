@@ -6,7 +6,7 @@ metadata:
   catalog: ai.nupi
   slug: stt-local-whisper
   description: Local speech-to-text adapter backed by Whisper.
-  version: 0.1.0-dev
+  version: 1.0.0
 spec:
   slot: stt
   mode: local
