@@ -30,7 +30,6 @@ struct whisper_stream {
     std::vector<float> pcmf32_new;
     std::vector<float> pcmf32;
     std::vector<float> pcmf32_old;
-    std::vector<float> pcmf32_all;
 
     std::string language_hint;
     bool detect_language = true;
@@ -210,7 +209,6 @@ int whisper_stream_process(whisper_stream *stream,
     }
 
     stream->pcmf32_new.insert(stream->pcmf32_new.end(), samples, samples + sample_count);
-    stream->pcmf32_all.insert(stream->pcmf32_all.end(), samples, samples + sample_count);
 
     if (static_cast<int>(stream->pcmf32_new.size()) < stream->n_samples_step) {
         return 0;
@@ -274,6 +272,8 @@ int whisper_stream_flush(whisper_stream *stream,
         return -1;
     }
 
+    bool emittedNewTokens = false;
+
     if (!stream->pcmf32_new.empty()) {
         const int n_samples_new = static_cast<int>(stream->pcmf32_new.size());
         const int n_samples_take = std::min(
@@ -298,43 +298,36 @@ int whisper_stream_flush(whisper_stream *stream,
         float confidence = 0.0f;
         if (run_inference(stream, stream->pcmf32.data(),
                           static_cast<int>(stream->pcmf32.size()),
-                          full_text, confidence) == 0) {
-            std::string delta = compute_delta(stream->last_window, full_text);
-            stream->last_window = full_text;
-            if (!delta.empty()) {
-                if (!stream->transcript.empty()) {
-                    stream->transcript.push_back(' ');
-                }
-                stream->transcript += delta;
+                          full_text, confidence) != 0) {
+            return -2;
+        }
+        std::string delta = compute_delta(stream->last_window, full_text);
+        stream->last_window = full_text;
+        if (!delta.empty()) {
+            if (!stream->transcript.empty()) {
+                stream->transcript.push_back(' ');
             }
+            stream->transcript += delta;
+            stream->last_confidence = confidence;
+            emittedNewTokens = true;
         }
     }
 
-    if (!stream->pcmf32_all.empty()) {
-        whisper_full_params backup = prepare_params(stream);
-        backup.single_segment = false;
-        if (whisper_full(stream->ctx.get(), backup,
-                         stream->pcmf32_all.data(),
-                         static_cast<int>(stream->pcmf32_all.size())) == 0) {
-            float confidence = 0.0f;
-            std::string full = collect_text(stream->ctx.get(), confidence);
-            stream->transcript = trim(full);
-            stream->last_window = stream->transcript;
-            stream->last_confidence = confidence;
-        }
+    std::string final_text = trim(stream->transcript);
+    if (!emittedNewTokens && final_text.empty()) {
+        return 0;
     }
 
     *out_confidence = stream->last_confidence;
-    *out_text = static_cast<char *>(std::malloc(stream->transcript.size() + 1));
+    *out_text = static_cast<char *>(std::malloc(final_text.size() + 1));
     if (*out_text == nullptr) {
         return -3;
     }
-    std::memcpy(*out_text, stream->transcript.c_str(), stream->transcript.size() + 1);
+    std::memcpy(*out_text, final_text.c_str(), final_text.size() + 1);
 
     stream->pcmf32.clear();
     stream->pcmf32_old.clear();
     stream->pcmf32_new.clear();
-    stream->pcmf32_all.clear();
     stream->last_window.clear();
     stream->transcript.clear();
     stream->last_confidence = 0.0f;

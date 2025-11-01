@@ -29,7 +29,7 @@ import (
 const (
 	minFrameMillis      = 3000 // step_ms
 	targetWindowMillis  = 10000
-	keepMillis          = 200
+	keepMillis          = 500
 	defaultFlashAttnEnv = "WHISPERCPP_FLASH_ATTENTION"
 	useGPUEnv           = "WHISPERCPP_USE_GPU"
 	threadsEnv          = "WHISPERCPP_THREADS"
