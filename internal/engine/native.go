@@ -27,12 +27,14 @@ import (
 )
 
 const (
-	minFrameMillis      = 3000 // step_ms
-	targetWindowMillis  = 10000
-	keepMillis          = 500
-	defaultFlashAttnEnv = "WHISPERCPP_FLASH_ATTENTION"
-	useGPUEnv           = "WHISPERCPP_USE_GPU"
-	threadsEnv          = "WHISPERCPP_THREADS"
+	defaultStepMillis    = 3000 // step_ms
+	defaultLengthMillis  = 10000
+	defaultKeepMillis    = 200 // Audio overlap between windows
+	defaultVADThreshold  = 0.6
+	defaultFreqThreshold = 100.0
+	defaultFlashAttnEnv  = "WHISPERCPP_FLASH_ATTENTION"
+	useGPUEnv            = "WHISPERCPP_USE_GPU"
+	threadsEnv           = "WHISPERCPP_THREADS"
 )
 
 func NativeAvailable() bool { return true }
@@ -81,17 +83,133 @@ func NewNativeEngine(modelPath string, opts NativeOptions) (Engine, error) {
 		}
 	}
 
+	translate := false
+	if opts.Translate != nil {
+		translate = *opts.Translate
+	}
+
+	temperatureInc := float32(0.0)
+	if opts.TemperatureInc != nil {
+		temperatureInc = *opts.TemperatureInc
+	}
+
+	beamSize := 1
+	if opts.BeamSize != nil && *opts.BeamSize > 0 {
+		beamSize = *opts.BeamSize
+	}
+
+	audioCtx := 0
+	if opts.AudioCtx != nil {
+		audioCtx = *opts.AudioCtx
+	}
+
+	printTimestamps := false
+	stepMs := defaultStepMillis
+	if opts.StepMs != nil {
+		stepMs = *opts.StepMs
+	}
+	lengthMs := defaultLengthMillis
+	if opts.LengthMs != nil && *opts.LengthMs > 0 {
+		lengthMs = *opts.LengthMs
+	}
+	keepMs := defaultKeepMillis
+	if opts.KeepMs != nil {
+		keepMs = *opts.KeepMs
+	}
+	useVAD := false
+	if opts.UseVAD != nil {
+		useVAD = *opts.UseVAD
+	} else if stepMs <= 0 {
+		useVAD = true
+	}
+	if useVAD {
+		stepMs = 0
+		keepMs = 0
+	} else {
+		if stepMs <= 0 {
+			stepMs = defaultStepMillis
+		}
+		if keepMs > stepMs {
+			keepMs = stepMs
+		}
+		if keepMs < 0 {
+			keepMs = 0
+		}
+		if lengthMs < stepMs {
+			lengthMs = stepMs
+		}
+	}
+	if lengthMs <= 0 {
+		lengthMs = defaultLengthMillis
+	}
+	if keepMs < 0 {
+		keepMs = 0
+	}
+	if opts.PrintTimestamps != nil {
+		printTimestamps = *opts.PrintTimestamps
+	} else {
+		printTimestamps = useVAD
+	}
+
+	printSpecial := false
+	if opts.PrintSpecial != nil {
+		printSpecial = *opts.PrintSpecial
+	}
+	keepContext := false
+	if opts.KeepContext != nil {
+		keepContext = *opts.KeepContext
+	}
+	if useVAD {
+		keepContext = false
+	}
+	vadThold := float32(defaultVADThreshold)
+	if opts.VADThreshold != nil {
+		vadThold = *opts.VADThreshold
+	}
+	freqThold := float32(defaultFreqThreshold)
+	if opts.FreqThreshold != nil {
+		freqThold = *opts.FreqThreshold
+	}
+	maxTokens := 0
+	if opts.MaxTokens != nil && *opts.MaxTokens > 0 {
+		maxTokens = *opts.MaxTokens
+	}
+	tinyDiarize := false
+	if opts.TinyDiarize != nil {
+		tinyDiarize = *opts.TinyDiarize
+	}
+	disableFallback := false
+	if opts.DisableFallback != nil {
+		disableFallback = *opts.DisableFallback
+	}
+	if disableFallback {
+		temperatureInc = 0
+	}
+
 	cModel := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cModel))
 
 	stream := C.whisper_stream_create(
 		cModel,
-		C.int32_t(minFrameMillis),
-		C.int32_t(targetWindowMillis),
-		C.int32_t(keepMillis),
+		C.int32_t(stepMs),
+		C.int32_t(lengthMs),
+		C.int32_t(keepMs),
 		C.int32_t(threads),
 		C.bool(useGPU),
 		C.bool(flashAttn),
+		C.bool(translate),
+		C.float(temperatureInc),
+		C.bool(disableFallback),
+		C.int32_t(beamSize),
+		C.int32_t(audioCtx),
+		C.bool(printTimestamps),
+		C.bool(printSpecial),
+		C.bool(keepContext),
+		C.bool(useVAD),
+		C.float(vadThold),
+		C.float(freqThold),
+		C.int32_t(maxTokens),
+		C.bool(tinyDiarize),
 	)
 	if stream == nil {
 		return nil, fmt.Errorf("whisper: failed to initialise context for %s", modelPath)

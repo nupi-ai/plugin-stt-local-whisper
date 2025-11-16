@@ -169,8 +169,8 @@ func TestNativeEngineTrimsOversizedAudio(t *testing.T) {
 	)
 
 	engine := openTestNativeEngine(t)
-	windowSamples := (targetWindowMillis * sampleRate) / 1000
-	stepSamples := (minFrameMillis * sampleRate) / 1000
+	windowSamples := (defaultLengthMillis * sampleRate) / 1000
+	stepSamples := (defaultStepMillis * sampleRate) / 1000
 	big := make([]byte, (windowSamples+stepSamples)*bytesPerSample)
 
 	if _, err := engine.TranscribeSegment(context.Background(), big, Options{Language: "en"}); err != nil {

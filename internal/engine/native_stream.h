@@ -10,6 +10,12 @@ extern "C" {
 typedef struct whisper_stream whisper_stream;
 
 /// Creates a streaming Whisper context.
+/// @param translate If true, translate from source language to English
+/// @param temperature_inc Temperature increment for fallback (0.0 to disable)
+/// @param beam_size Beam size for beam search (use 1 for greedy sampling)
+/// @param audio_ctx Audio encoder context size (0 = all, default)
+/// @param print_timestamps If true, print timestamps in output
+/// @param print_special If true, print special tokens
 /// Returns NULL on failure.
 whisper_stream *whisper_stream_create(const char *model_path,
                                       int32_t step_ms,
@@ -17,7 +23,20 @@ whisper_stream *whisper_stream_create(const char *model_path,
                                       int32_t keep_ms,
                                       int32_t threads,
                                       bool use_gpu,
-                                      bool flash_attn);
+                                      bool flash_attn,
+                                      bool translate,
+                                      float temperature_inc,
+                                      bool disable_fallback,
+                                      int32_t beam_size,
+                                      int32_t audio_ctx,
+                                      bool print_timestamps,
+                                      bool print_special,
+                                      bool keep_context,
+                                      bool use_vad,
+                                      float vad_thold,
+                                      float freq_thold,
+                                      int32_t max_tokens,
+                                      bool tinydiarize);
 
 /// Releases all resources associated with the stream.
 void whisper_stream_free(whisper_stream *stream);
