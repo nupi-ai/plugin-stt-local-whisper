@@ -1,5 +1,7 @@
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/nupi-ai/nupi v0.0.0-20251123222241-478598e2ce7a h1:tIFQnu8sEjm6Z+nIBXIcCWliENBZQuyT/35nJvTGV6E=
+github.com/nupi-ai/nupi v0.0.0-20251123222241-478598e2ce7a/go.mod h1:d+IIfc2RBz9zLhmD5GvWQi4vt4LIP2SnOYozrX9nV2s=
 golang.org/x/net v0.43.0 h1:lat02VYK2j4aLzMzecihNvTlJNQUq316m2Mr9rnM6YE=
 golang.org/x/net v0.43.0/go.mod h1:vhO1fvI4dGsIjh73sWfUVjj3N7CA9WkKJNQm2svM6Jg=
 golang.org/x/sys v0.36.0 h1:KVRy2GtZBrk1cBYA7MKu5bEZFxQk4NIDV6RLVcC8o0k=

@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/nupi-ai/nupi v0.0.0
+	github.com/nupi-ai/nupi v0.0.0-20251123222241-478598e2ce7a
 	google.golang.org/grpc v1.64.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -17,5 +17,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
-
-replace github.com/nupi-ai/nupi => ../nupi
