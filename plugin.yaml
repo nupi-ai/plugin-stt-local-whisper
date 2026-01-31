@@ -9,7 +9,6 @@ metadata:
   version: 1.0.0
 spec:
   slot: stt
-  mode: local
   homepage: https://github.com/nupi-ai/plugin-stt-local-whisper
   compatibility:
     nupi: ">=0.0.0-dev"
