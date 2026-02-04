@@ -134,6 +134,7 @@ func main() {
 	logger.Info("adapter ready to serve requests")
 
 	// STEP 6: Setup graceful shutdown
+	shutdownDone := make(chan struct{})
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutdown requested, stopping gRPC server")
@@ -152,6 +153,7 @@ func main() {
 			logger.Warn("graceful stop timed out, forcing stop")
 			grpcServer.Stop()
 		}
+		close(shutdownDone)
 	}()
 
 	// STEP 7: Wait for server to finish or error
@@ -159,8 +161,8 @@ func main() {
 	case err := <-serverErr:
 		logger.Error("gRPC server terminated with error", "error", err)
 		os.Exit(1)
-	case <-ctx.Done():
-		// Normal shutdown via signal
+	case <-shutdownDone:
+		// Normal shutdown — graceful drain completed
 	}
 
 	if snapshot := recorder.Snapshot(); snapshot.TotalStreams > 0 {
