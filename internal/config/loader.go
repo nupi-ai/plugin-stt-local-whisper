@@ -38,21 +38,29 @@ func (l Loader) Load() (Config, error) {
 	overrideString(l.Lookup, "NUPI_LANGUAGE_HINT", &cfg.Language)
 	overrideString(l.Lookup, "NUPI_ADAPTER_DATA_DIR", &cfg.DataDir)
 	overrideString(l.Lookup, "NUPI_MODEL_PATH", &cfg.ModelPath)
-	overrideBool(l.Lookup, "NUPI_ADAPTER_USE_STUB_ENGINE", &cfg.UseStubEngine)
-	if value, ok := l.Lookup("WHISPERCPP_USE_GPU"); ok {
-		if parsed, err := parseBool(value); err == nil {
-			assignBoolPtr(&cfg.UseGPU, parsed)
-		}
+	if err := overrideBool(l.Lookup, "NUPI_ADAPTER_USE_STUB_ENGINE", &cfg.UseStubEngine); err != nil {
+		return Config{}, err
 	}
-	if value, ok := l.Lookup("WHISPERCPP_FLASH_ATTENTION"); ok {
-		if parsed, err := parseBool(value); err == nil {
-			assignBoolPtr(&cfg.FlashAttention, parsed)
+	if value, ok := l.Lookup("WHISPERCPP_USE_GPU"); ok && strings.TrimSpace(value) != "" {
+		parsed, err := parseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: invalid value for WHISPERCPP_USE_GPU: %w", err)
 		}
+		assignBoolPtr(&cfg.UseGPU, parsed)
 	}
-	if value, ok := l.Lookup("WHISPERCPP_THREADS"); ok {
-		if parsed, err := parseInt(value); err == nil {
-			assignIntPtr(&cfg.Threads, parsed)
+	if value, ok := l.Lookup("WHISPERCPP_FLASH_ATTENTION"); ok && strings.TrimSpace(value) != "" {
+		parsed, err := parseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: invalid value for WHISPERCPP_FLASH_ATTENTION: %w", err)
 		}
+		assignBoolPtr(&cfg.FlashAttention, parsed)
+	}
+	if value, ok := l.Lookup("WHISPERCPP_THREADS"); ok && strings.TrimSpace(value) != "" {
+		parsed, err := parseInt(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: invalid value for WHISPERCPP_THREADS: %w", err)
+		}
+		assignIntPtr(&cfg.Threads, parsed)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -120,39 +128,26 @@ func overrideString(lookup func(string) (string, bool), key string, target *stri
 	}
 }
 
-func overrideBool(lookup func(string) (string, bool), key string, target *bool) {
+func overrideBool(lookup func(string) (string, bool), key string, target *bool) error {
 	if lookup == nil || target == nil {
-		return
+		return nil
 	}
-	if value, ok := lookup(key); ok {
-		if parsed, err := parseBool(value); err == nil {
-			*target = parsed
+	if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
+		parsed, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("config: invalid value for %s: %w", key, err)
 		}
+		*target = parsed
 	}
+	return nil
 }
 
 func parseBool(value string) (bool, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return false, fmt.Errorf("empty")
-	}
-	parsed, err := strconv.ParseBool(trimmed)
-	if err != nil {
-		return false, err
-	}
-	return parsed, nil
+	return strconv.ParseBool(strings.TrimSpace(value))
 }
 
 func parseInt(value string) (int, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return 0, fmt.Errorf("empty")
-	}
-	parsed, err := strconv.Atoi(trimmed)
-	if err != nil {
-		return 0, err
-	}
-	return parsed, nil
+	return strconv.Atoi(strings.TrimSpace(value))
 }
 
 func assignBoolPtr(target **bool, value bool) {

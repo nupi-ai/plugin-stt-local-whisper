@@ -26,8 +26,8 @@ type Config struct {
 	Threads        *int
 }
 
-// Validate applies defaults and raises an error when required fields are
-// missing. Iteration 0 keeps validation minimal; future work will extend it.
+// Validate applies defaults, checks required fields, and rejects out-of-range
+// values.
 func (c *Config) Validate() error {
 	if c.ListenAddr == "" {
 		return fmt.Errorf("config: listen address is required")
@@ -43,6 +43,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DataDir == "" {
 		c.DataDir = DefaultDataDir
+	}
+	if c.Threads != nil && *c.Threads < 0 {
+		return fmt.Errorf("config: threads must be >= 0, got %d", *c.Threads)
 	}
 	return nil
 }

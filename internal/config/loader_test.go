@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nupi-ai/plugin-stt-local-whisper/internal/config"
@@ -136,5 +137,130 @@ func assertIntPtr(t *testing.T, want int, got *int, label string) {
 	}
 	if *got != want {
 		t.Fatalf("unexpected %s: want %d, got %d", label, want, *got)
+	}
+}
+
+func TestLoaderInvalidEnvBool(t *testing.T) {
+	env := map[string]string{
+		"WHISPERCPP_USE_GPU": "not_bool",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid bool env value")
+	}
+	if !strings.Contains(err.Error(), "WHISPERCPP_USE_GPU") {
+		t.Errorf("error should mention env var name, got: %v", err)
+	}
+}
+
+func TestLoaderInvalidEnvFlashAttention(t *testing.T) {
+	env := map[string]string{
+		"WHISPERCPP_FLASH_ATTENTION": "abc",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid flash_attention env value")
+	}
+	if !strings.Contains(err.Error(), "WHISPERCPP_FLASH_ATTENTION") {
+		t.Errorf("error should mention env var name, got: %v", err)
+	}
+}
+
+func TestLoaderInvalidEnvThreads(t *testing.T) {
+	env := map[string]string{
+		"WHISPERCPP_THREADS": "xyz",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid threads env value")
+	}
+	if !strings.Contains(err.Error(), "WHISPERCPP_THREADS") {
+		t.Errorf("error should mention env var name, got: %v", err)
+	}
+}
+
+func TestLoaderInvalidStubEngineBool(t *testing.T) {
+	env := map[string]string{
+		"NUPI_ADAPTER_USE_STUB_ENGINE": "not_a_bool",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid stub engine bool value")
+	}
+	if !strings.Contains(err.Error(), "NUPI_ADAPTER_USE_STUB_ENGINE") {
+		t.Errorf("error should mention env var name, got: %v", err)
+	}
+}
+
+func TestLoaderEmptyEnvVarsSkipped(t *testing.T) {
+	env := map[string]string{
+		"NUPI_ADAPTER_USE_STUB_ENGINE": "",
+		"WHISPERCPP_USE_GPU":           "",
+		"WHISPERCPP_FLASH_ATTENTION":   "  ",
+		"WHISPERCPP_THREADS":           "",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("empty env vars should be skipped, got: %v", err)
+	}
+	if cfg.UseStubEngine {
+		t.Errorf("UseStubEngine should remain false for empty env")
+	}
+	if cfg.UseGPU != nil {
+		t.Errorf("UseGPU should remain nil for empty env, got %v", *cfg.UseGPU)
+	}
+	if cfg.FlashAttention != nil {
+		t.Errorf("FlashAttention should remain nil for empty env, got %v", *cfg.FlashAttention)
+	}
+	if cfg.Threads != nil {
+		t.Errorf("Threads should remain nil for empty env, got %v", *cfg.Threads)
+	}
+}
+
+func TestValidateNegativeThreads(t *testing.T) {
+	// assignIntPtr normalizes <=0 to nil during Load, so we test Validate
+	// directly to ensure defense-in-depth works if a future code path
+	// bypasses assignIntPtr.
+	negOne := -1
+	cfg := config.Config{
+		ListenAddr: "localhost:0",
+		Threads:    &negOne,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for negative threads")
+	}
+	if !strings.Contains(err.Error(), "threads") {
+		t.Errorf("error should mention threads, got: %v", err)
 	}
 }
