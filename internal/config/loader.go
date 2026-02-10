@@ -62,6 +62,13 @@ func (l Loader) Load() (Config, error) {
 		}
 		assignIntPtr(&cfg.Threads, parsed)
 	}
+	if value, ok := l.Lookup("WHISPERCPP_BEAM_SIZE"); ok && strings.TrimSpace(value) != "" {
+		parsed, err := parseInt(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: invalid value for WHISPERCPP_BEAM_SIZE: %w", err)
+		}
+		assignIntPtr(&cfg.BeamSize, parsed)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -81,6 +88,7 @@ func applyJSON(raw string, cfg *Config) error {
 		UseGPU         *bool  `json:"use_gpu"`
 		FlashAttention *bool  `json:"flash_attention"`
 		Threads        *int   `json:"threads"`
+		BeamSize       *int   `json:"beam_size"`
 	}
 	var payload jsonConfig
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -115,6 +123,9 @@ func applyJSON(raw string, cfg *Config) error {
 	}
 	if payload.Threads != nil {
 		assignIntPtr(&cfg.Threads, *payload.Threads)
+	}
+	if payload.BeamSize != nil {
+		assignIntPtr(&cfg.BeamSize, *payload.BeamSize)
 	}
 	return nil
 }

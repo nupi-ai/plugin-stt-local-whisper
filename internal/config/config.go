@@ -24,6 +24,7 @@ type Config struct {
 	UseGPU         *bool
 	FlashAttention *bool
 	Threads        *int
+	BeamSize       *int
 }
 
 // Validate applies defaults, checks required fields, and rejects out-of-range
@@ -46,6 +47,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Threads != nil && *c.Threads < 0 {
 		return fmt.Errorf("config: threads must be >= 0, got %d", *c.Threads)
+	}
+	if c.BeamSize != nil && *c.BeamSize < 1 {
+		return fmt.Errorf("config: beam_size must be >= 1, got %d", *c.BeamSize)
 	}
 	return nil
 }

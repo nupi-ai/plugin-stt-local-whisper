@@ -94,6 +94,9 @@ func newEngineWithOptions(cfg config.Config, manager *models.Manager, logger *sl
 		if cfg.Threads != nil && *cfg.Threads > 0 {
 			nativeOptions.Threads = cfg.Threads
 		}
+		if cfg.BeamSize != nil && *cfg.BeamSize > 0 {
+			nativeOptions.BeamSize = cfg.BeamSize
+		}
 		native, nativeErr := NewNativeEngine(modelPath, nativeOptions)
 		if nativeErr != nil {
 			logger.Error("native engine initialisation failed; using stub", "error", nativeErr, "model_path", modelPath)
