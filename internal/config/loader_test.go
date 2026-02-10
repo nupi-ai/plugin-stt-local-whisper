@@ -43,11 +43,14 @@ func TestLoaderDefaults(t *testing.T) {
 	if cfg.Threads != nil {
 		t.Fatalf("expected threads default (nil), got %v", *cfg.Threads)
 	}
+	if cfg.BeamSize != nil {
+		t.Fatalf("expected beam_size default (nil), got %v", *cfg.BeamSize)
+	}
 }
 
 func TestLoaderOverrides(t *testing.T) {
 	env := map[string]string{
-		"NUPI_ADAPTER_CONFIG":          `{"model_variant":"small","language":"pl","log_level":"debug","data_dir":"/tmp/data","model_path":"/tmp/models/custom.gguf","use_stub_engine":false,"use_gpu":false,"flash_attention":true,"threads":4}`,
+		"NUPI_ADAPTER_CONFIG":          `{"model_variant":"small","language":"pl","log_level":"debug","data_dir":"/tmp/data","model_path":"/tmp/models/custom.gguf","use_stub_engine":false,"use_gpu":false,"flash_attention":true,"threads":4,"beam_size":5}`,
 		"NUPI_ADAPTER_LISTEN_ADDR":     "0.0.0.0:6000",
 		"NUPI_LOG_LEVEL":               "warn",
 		"NUPI_MODEL_VARIANT":           "medium",
@@ -58,6 +61,7 @@ func TestLoaderOverrides(t *testing.T) {
 		"WHISPERCPP_USE_GPU":           "true",
 		"WHISPERCPP_FLASH_ATTENTION":   "false",
 		"WHISPERCPP_THREADS":           "6",
+		"WHISPERCPP_BEAM_SIZE":         "8",
 	}
 
 	loader := config.Loader{
@@ -82,6 +86,7 @@ func TestLoaderOverrides(t *testing.T) {
 	assertBoolPtr(t, true, cfg.UseGPU, "use gpu")
 	assertBoolPtr(t, false, cfg.FlashAttention, "flash attention")
 	assertIntPtr(t, 6, cfg.Threads, "threads")
+	assertIntPtr(t, 8, cfg.BeamSize, "beam_size") // env override wins over JSON value 5
 }
 
 func TestLoaderThreadsAuto(t *testing.T) {
@@ -216,12 +221,64 @@ func TestLoaderInvalidStubEngineBool(t *testing.T) {
 	}
 }
 
+func TestLoaderInvalidEnvBeamSize(t *testing.T) {
+	env := map[string]string{
+		"WHISPERCPP_BEAM_SIZE": "abc",
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	_, err := loader.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid beam_size env value")
+	}
+	if !strings.Contains(err.Error(), "WHISPERCPP_BEAM_SIZE") {
+		t.Errorf("error should mention env var name, got: %v", err)
+	}
+}
+
+func TestLoaderBeamSizeFromJSON(t *testing.T) {
+	env := map[string]string{
+		"NUPI_ADAPTER_CONFIG": `{"beam_size":3}`,
+	}
+	loader := config.Loader{
+		Lookup: func(key string) (string, bool) {
+			v, ok := env[key]
+			return v, ok
+		},
+	}
+	cfg, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	assertIntPtr(t, 3, cfg.BeamSize, "beam_size from JSON")
+}
+
+func TestValidateInvalidBeamSize(t *testing.T) {
+	zero := 0
+	cfg := config.Config{
+		ListenAddr: "localhost:0",
+		BeamSize:   &zero,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for beam_size=0")
+	}
+	if !strings.Contains(err.Error(), "beam_size") {
+		t.Errorf("error should mention beam_size, got: %v", err)
+	}
+}
+
 func TestLoaderEmptyEnvVarsSkipped(t *testing.T) {
 	env := map[string]string{
 		"NUPI_ADAPTER_USE_STUB_ENGINE": "",
 		"WHISPERCPP_USE_GPU":           "",
 		"WHISPERCPP_FLASH_ATTENTION":   "  ",
 		"WHISPERCPP_THREADS":           "",
+		"WHISPERCPP_BEAM_SIZE":         "",
 	}
 	loader := config.Loader{
 		Lookup: func(key string) (string, bool) {
@@ -244,6 +301,9 @@ func TestLoaderEmptyEnvVarsSkipped(t *testing.T) {
 	}
 	if cfg.Threads != nil {
 		t.Errorf("Threads should remain nil for empty env, got %v", *cfg.Threads)
+	}
+	if cfg.BeamSize != nil {
+		t.Errorf("BeamSize should remain nil for empty env, got %v", *cfg.BeamSize)
 	}
 }
 
