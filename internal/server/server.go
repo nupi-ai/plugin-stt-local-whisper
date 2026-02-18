@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	napv1 "github.com/nupi-ai/nupi/api/nap/v1"
@@ -58,6 +59,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 		sessionID     string
 		streamID      string
 		lastSequence  uint64
+		streamLang    string // effective language for the entire stream
 	)
 	ctx := stream.Context()
 	defer func() {
@@ -77,7 +79,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 						flushCtx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
 						defer cancel()
 					}
-					if flushErr := s.emitFlush(flushCtx, stream, sessionID, streamID, lastSequence, streamMetrics, "stream closed"); flushErr != nil {
+					if flushErr := s.emitFlush(flushCtx, stream, sessionID, streamID, lastSequence, streamLang, streamMetrics, "stream closed"); flushErr != nil {
 						return flushErr
 					}
 				}
@@ -92,10 +94,12 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 
 		if !initLogged {
 			streamMetrics = s.metrics.StartStream(req.GetSessionId(), req.GetStreamId(), req.GetMetadata())
+			streamLang = resolveLanguage(s.cfg.Language, req.GetMetadata())
 			s.log.Info("stream opened",
 				"session_id", req.GetSessionId(),
 				"stream_id", req.GetStreamId(),
 				"metadata", req.GetMetadata(),
+				"resolved_language", streamLang,
 			)
 			sessionID = req.GetSessionId()
 			streamID = req.GetStreamId()
@@ -121,7 +125,7 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 			}
 			start := time.Now()
 			results, err := s.engine.TranscribeSegment(ctx, segment.GetAudio(), engine.Options{
-				Language: s.cfg.Language,
+				Language: streamLang,
 				Final:    req.GetFlush() || segment.GetLast(),
 				Sequence: sequence,
 			})
@@ -140,13 +144,13 @@ func (s *Server) StreamTranscription(stream napv1.SpeechToTextService_StreamTran
 					"final", res.Final,
 				)
 			}
-			if err := s.sendResults(stream, sequence, results, streamMetrics); err != nil {
+			if err := s.sendResults(stream, sequence, results, streamLang, streamMetrics); err != nil {
 				return err
 			}
 		}
 
 		if req.GetFlush() {
-			if err := s.emitFlush(ctx, stream, req.GetSessionId(), req.GetStreamId(), sequence, streamMetrics, "stream flushed"); err != nil {
+			if err := s.emitFlush(ctx, stream, req.GetSessionId(), req.GetStreamId(), sequence, streamLang, streamMetrics, "stream flushed"); err != nil {
 				return err
 			}
 			return nil
@@ -159,6 +163,7 @@ func (s *Server) emitFlush(
 	stream napv1.SpeechToTextService_StreamTranscriptionServer,
 	sessionID, streamID string,
 	sequence uint64,
+	lang string,
 	metrics *telemetry.StreamMetrics,
 	reason string,
 ) error {
@@ -171,7 +176,7 @@ func (s *Server) emitFlush(
 		metrics.RecordFlush()
 	}
 	start := time.Now()
-	results, err := s.engine.Flush(ctx, engine.Options{Language: s.cfg.Language, Final: true})
+	results, err := s.engine.Flush(ctx, engine.Options{Language: lang, Final: true})
 	if err != nil {
 		logEntry.Error("engine flush failure", "error", err, "context_err", ctx.Err())
 		return err
@@ -187,14 +192,30 @@ func (s *Server) emitFlush(
 			"final", res.Final,
 		)
 	}
-	if err := s.sendResults(stream, sequence, results, metrics); err != nil {
+	if err := s.sendResults(stream, sequence, results, lang, metrics); err != nil {
 		return err
 	}
 	logEntry.Info(reason)
 	return nil
 }
 
-func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []engine.Result, metrics *telemetry.StreamMetrics) error {
+// resolveLanguage determines the effective language for a transcription stream
+// based on the configured language mode and request metadata.
+//
+//   - "client": use nupi.lang.iso1 from metadata; fall back to "auto" if absent.
+//   - "auto": always auto-detect, ignore metadata.
+//   - any other value: use it as-is (specific ISO 639-1 code), ignore metadata.
+func resolveLanguage(configLang string, metadata map[string]string) string {
+	if configLang != "client" {
+		return configLang
+	}
+	if code := strings.TrimSpace(metadata["nupi.lang.iso1"]); code != "" {
+		return code
+	}
+	return "auto"
+}
+
+func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptionServer, sequence uint64, results []engine.Result, resolvedLang string, metrics *telemetry.StreamMetrics) error {
 	for _, res := range results {
 		if metrics != nil {
 			metrics.RecordTranscript(sequence, res.Text, res.Final)
@@ -204,7 +225,7 @@ func (s *Server) sendResults(stream napv1.SpeechToTextService_StreamTranscriptio
 			Text:       res.Text,
 			Confidence: res.Confidence,
 			Final:      res.Final,
-			Metadata:   adapterinfo.TranscriptMetadata(s.cfg.ModelVariant, s.cfg.Language),
+			Metadata:   adapterinfo.TranscriptMetadata(s.cfg.ModelVariant, resolvedLang),
 		}
 		if err := stream.Send(transcript); err != nil {
 			s.log.Error("failed to send transcript", "error", err)

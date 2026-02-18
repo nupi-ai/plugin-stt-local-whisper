@@ -26,8 +26,13 @@ spec:
       description: Selects the Whisper model size.
     language:
       type: string
-      default: auto
-      description: ISO-639 language hint for decoding ("auto" for detection).
+      default: client
+      description: >
+        Language mode for transcription. "client" (default) reads the language
+        from the nupi.lang.iso1 request metadata propagated by the daemon; falls
+        back to auto-detect if no metadata is present. "auto" always lets Whisper
+        auto-detect the language, ignoring client metadata. A specific ISO 639-1
+        code (e.g. "en", "de") forces that language regardless of client metadata.
     model_path:
       type: string
       description: Optional absolute path to a GGUF model; overrides variant-based lookup.

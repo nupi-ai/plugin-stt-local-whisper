@@ -1,12 +1,15 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	// DefaultListenAddr is used when the adapter runner does not inject an explicit address.
 	DefaultListenAddr = "127.0.0.1:50051"
 	DefaultModel      = "base"
-	DefaultLanguage   = "auto"
+	DefaultLanguage   = "client"
 	DefaultLogLevel   = "info"
 	DefaultDataDir    = "data"
 )
@@ -36,8 +39,12 @@ func (c *Config) Validate() error {
 	if c.ModelVariant == "" {
 		c.ModelVariant = DefaultModel
 	}
+	c.Language = strings.ToLower(strings.TrimSpace(c.Language))
 	if c.Language == "" {
 		c.Language = DefaultLanguage
+	}
+	if c.Language != "client" && c.Language != "auto" && len(c.Language) > 8 {
+		return fmt.Errorf("config: language must be 'client', 'auto', or a short ISO 639-1 code, got %q", c.Language)
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = DefaultLogLevel
