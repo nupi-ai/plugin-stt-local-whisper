@@ -18,8 +18,10 @@ const (
 // or injected JSON payload (`NUPI_ADAPTER_CONFIG`).
 type Config struct {
 	ListenAddr     string
-	ModelVariant   string
-	Language       string
+	ModelVariant string
+	// Language mode: "client" (default), "auto", or ISO 639-1 code
+	// (e.g. "pl", "en"). Passed to whisper.cpp for transcription hints.
+	Language string
 	LogLevel       string
 	DataDir        string
 	ModelPath      string

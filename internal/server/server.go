@@ -202,9 +202,12 @@ func (s *Server) emitFlush(
 // resolveLanguage determines the effective language for a transcription stream
 // based on the configured language mode and request metadata.
 //
+// The returned value is passed to whisper.cpp which requires an ISO 639-1 code
+// (e.g. "pl", "en", "de") or "auto" for auto-detection.
+//
 //   - "client": use nupi.lang.iso1 from metadata; fall back to "auto" if absent.
 //   - "auto": always auto-detect, ignore metadata.
-//   - any other value: use it as-is (specific ISO 639-1 code), ignore metadata.
+//   - other: ISO 639-1 code from config, passed verbatim (ignore metadata).
 func resolveLanguage(configLang string, metadata map[string]string) string {
 	if configLang != "client" {
 		return configLang
