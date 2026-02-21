@@ -3,7 +3,7 @@ kind: Plugin
 type: adapter
 metadata:
   name: Nupi Whisper Local STT
-  catalog: ai.nupi
+  namespace: ai.nupi
   slug: stt-local-whisper
   description: Local speech-to-text adapter backed by Whisper.
   version: 1.0.0
