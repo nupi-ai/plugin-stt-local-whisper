@@ -52,9 +52,6 @@ spec:
       type: integer
       default: 1
       description: Beam size for beam search decoding (1 = greedy sampling, >1 = beam search).
-  assets:
-    models:
-      cacheDirEnv: NUPI_ADAPTER_DATA_DIR
   telemetry:
     stdout: true
     stderr: true
